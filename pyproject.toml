@@ -5,6 +5,8 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
+    "numpy>=1.26",
+    "pydantic>=2.11.9",
     "segment-anything>=1.0",
     "torch>=2.8.0",
     "torchvision>=0.23.0",

@@ -1,4 +1,6 @@
-from typing import Any, Dict, Type
+from typing import Any, Dict
+from datetime import datetime
+from pydantic import BaseModel, Field
 
 class SensorSchema:
 	"""
@@ -12,6 +14,8 @@ class SensorSchema:
 	@classmethod
 	def register_algorithm(cls, name: str, algorithm: Any):
 		"""Register a conversion algorithm by name."""
+		if "_algorithm_factory" not in cls.__dict__:
+			cls._algorithm_factory = dict(cls._algorithm_factory)
 		cls._algorithm_factory[name] = algorithm
 
 	@classmethod
@@ -20,13 +24,14 @@ class SensorSchema:
 		Convert sensor input to schema using the specified algorithm.
 		If no algorithm is specified, use the default (first registered).
 		"""
-		if not cls._algorithm_factory:
+		factory = cls.__dict__.get("_algorithm_factory", cls._algorithm_factory)
+		if not factory:
 			raise ValueError("No algorithms registered for schema conversion.")
 		if algorithm is None:
-			algorithm = next(iter(cls._algorithm_factory))
-		if algorithm not in cls._algorithm_factory:
+			algorithm = next(iter(factory))
+		if algorithm not in factory:
 			raise ValueError(f"Algorithm '{algorithm}' not registered.")
-		return cls._algorithm_factory[algorithm](sensor_input, **kwargs)
+		return factory[algorithm](sensor_input, **kwargs)
 
 	def __init__(self, Timestamp: str, Place: str, Count: int, Type: str, Confidence: float, Produced_by: str):
 		self.Timestamp = Timestamp
@@ -46,3 +51,14 @@ class SensorSchema:
 			"Confidence": self.Confidence,
 			"Produced_by": self.Produced_by,
 		}
+	
+    
+class SensorReading(BaseModel):
+	time: datetime
+	mgrs: str = Field(description="Single MGRS string, uppercase, no spaces")
+	what: str
+	amount: float | None = None
+	confidence: int = Field(ge=0, le=100)
+	sensor_id: str
+	unit: str | None = None
+	observer_signature: str = Field(min_length=3, description="e.g., 'Sensor 1, Team A'")
