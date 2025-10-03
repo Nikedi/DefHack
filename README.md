@@ -42,4 +42,12 @@ This project uses [uv](https://github.com/astral-sh/uv) for Python package manag
 
 For more details, see the [uv documentation](https://github.com/astral-sh/uv).
 
+## Configuring sensor backends
+
+The sensor pipeline ships with lightweight heuristics by default so it works
+out-of-the-box.  To enable stronger models such as TinyYOLO (detection) or
+FastSeg (segmentation), edit `DefHack/sensors/settings.py` and change the
+`detection_backend` and `segmentation_backend` values.  Remember to install the
+corresponding dependencies before switching backends.
+
 

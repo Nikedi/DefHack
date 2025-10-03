@@ -1,13 +1,12 @@
 from __future__ import annotations
 
-import os
+import warnings
 from functools import lru_cache
 from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 
-YOLO_MODEL_NAME = "yolov5s"
-ENABLE_YOLO = os.environ.get("DEFHACK_ENABLE_YOLO", "0") == "1"
+from ..settings import settings
 
 try:  # pragma: no cover - heavy dependency, optional at runtime
     from yolov5 import YOLO
@@ -16,18 +15,19 @@ except Exception:  # pragma: no cover - fallback when yolov5 not available
 
 
 def detect_soldiers(image: Any, metadata: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
-    """Run object detection model (e.g., YOLOv5) to get bounding boxes.
-
-    If the official model is unavailable, fall back to a lightweight heuristic that
-    identifies bright regions as potential soldier detections.
-    """
+    """Run the configured detection backend to identify soldier candidates."""
     arr = _ensure_array(image)
-    model = _load_yolo_model()
-    if model is not None:
-        try:
-            return _run_yolo_detection(model, arr, metadata)
-        except Exception:  # pragma: no cover - safeguard against model runtime issues
-            pass
+    backend = getattr(settings, "detection_backend", "heuristic").lower()
+    if backend == "tinyyolo":
+        model = _load_tinyyolo_model(settings.detection_model)
+        if model is not None:
+            try:
+                return _run_yolo_detection(model, arr, metadata)
+            except Exception as exc:  # pragma: no cover - runtime safeguard
+                warnings.warn(
+                    f"TinyYOLO detection failed ({exc}); falling back to heuristic backend.",
+                    RuntimeWarning,
+                )
     return _heuristic_detection(arr, metadata)
 
 
@@ -38,11 +38,12 @@ def _ensure_array(image: Any) -> np.ndarray:
 
 
 @lru_cache(maxsize=1)
-def _load_yolo_model():  # pragma: no cover - executed only when yolov5 is available
-    if not ENABLE_YOLO or YOLO is None:
+def _load_tinyyolo_model(model_name: str | None = None):  # pragma: no cover - heavy dependency
+    if YOLO is None:
         return None
+    name = (model_name or "yolov5n").strip() or "yolov5n"
     try:
-        return YOLO(model=YOLO_MODEL_NAME)
+        return YOLO(model=name)
     except Exception:
         return None
 

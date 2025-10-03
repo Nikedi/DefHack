@@ -6,6 +6,8 @@ This module implements the soldier recognition pipeline as described in document
 from statistics import mean
 from typing import Any, Dict, List
 
+from ..settings import settings
+
 from .prosses_image import preprocess_image
 from .detect_soldiers import detect_soldiers
 from .segment_soldiers import segment_soldiers
@@ -47,6 +49,8 @@ def soldier_recognition_pipeline(image: Any, **kwargs) -> ImageIntelSchema:
 		"scale": preprocessed["scale"],
 		"pad": preprocessed["pad"],
 		"target_size": preprocessed["target_size"],
+		"detection_backend": getattr(settings, "detection_backend", "heuristic"),
+		"segmentation_backend": getattr(settings, "segmentation_backend", "rectangle"),
 	}
 	image_meta = {**base_meta, **kwargs.get("image_meta", {})}
 
