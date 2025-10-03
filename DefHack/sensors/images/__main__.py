@@ -3,32 +3,15 @@
 This module implements the soldier recognition pipeline as described in documents/feature_implementation_plan.
 """
 
-from .. import SensorSchema
 from typing import Any, List, Dict
 
 # Import pipeline steps from their respective modules
+
 from .prosses_image import preprocess_image
 from .detect_soldiers import detect_soldiers
 from .segment_soldiers import segment_soldiers
 from .classify_attributes import classify_attributes
-
-class ImageIntelSchema(SensorSchema):
-	"""
-	Schema for intel extracted from forest images.
-	"""
-	def __init__(self, image_id: str, timestamp: str, detections: List[Dict[str, Any]], image_meta: Dict[str, Any] = None):
-		self.image_id = image_id
-		self.timestamp = timestamp
-		self.detections = detections
-		self.image_meta = image_meta or {}
-
-	def to_dict(self) -> dict:
-		return {
-			"image_id": self.image_id,
-			"timestamp": self.timestamp,
-			"detections": self.detections,
-			"image_meta": self.image_meta,
-		}
+from .models import ImageIntelSchema
 
 
 # --- Pipeline Step 1: Preprocessing ---
@@ -83,10 +66,15 @@ def soldier_recognition_pipeline(image: Any, **kwargs) -> ImageIntelSchema:
 			"confidence": det.get("confidence", 0.0)
 		})
 
-	image_id = kwargs.get("image_id", "unknown.jpg")
-	timestamp = kwargs.get("timestamp", "2025-10-03T00:00:00Z")
+	# Required fields for schema
+	Timestamp = kwargs.get("Timestamp", "2025-10-03T00:00:00Z")
+	Place = kwargs.get("Place", "Unknown")
+	Count = kwargs.get("Count", len(detections))
+	Type = kwargs.get("Type", "soldier")
+	Confidence = kwargs.get("Confidence", max([d.get("confidence", 0.0) for d in detections], default=0.0))
+	Produced_by = kwargs.get("Produced_by", "pipeline_v1")
 	image_meta = kwargs.get("image_meta", {})
-	return ImageIntelSchema(image_id, timestamp, detections, image_meta)
+	return ImageIntelSchema(Timestamp, Place, Count, Type, Confidence, Produced_by, detections, image_meta)
 
 # Register the pipeline algorithm with the superclass factory
 ImageIntelSchema.register_algorithm("default", soldier_recognition_pipeline)
