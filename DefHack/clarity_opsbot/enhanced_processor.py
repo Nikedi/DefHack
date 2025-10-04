@@ -42,21 +42,34 @@ class EnhancedMessageProcessor:
     
     def __init__(self, logger: logging.Logger):
         self.logger = logger
-        self.openai_client = self._init_openai_client()
+        self.openai_client = None  # Initialize lazily
         self.defhack_bridge = DefHackTelegramBridge()
         
-    def _init_openai_client(self):
-        """Initialize OpenAI client for vision and text processing"""
-        try:
-            import os
-            api_key = os.getenv("OPENAI_API_KEY")
-            if api_key and openai:
-                return openai.AsyncOpenAI(api_key=api_key)
-        except Exception as e:
-            self.logger.error(f"Failed to initialize OpenAI client: {e}")
-        return None
+    def _get_openai_client(self):
+        """Get OpenAI client, initializing lazily if needed"""
+        if self.openai_client is None:
+            try:
+                import os
+                api_key = os.getenv("OPENAI_API_KEY")
+                if api_key and openai:
+                    self.openai_client = openai.AsyncOpenAI(api_key=api_key)
+                    self.logger.info("✅ OpenAI client initialized successfully")
+                else:
+                    self.logger.warning("⚠️ OpenAI API key not found or openai module not available")
+            except Exception as e:
+                self.logger.error(f"Failed to initialize OpenAI client: {e}")
+        return self.openai_client
     
-    async def process_message(self, message, user_id: int, chat_id: int) -> Optional[ProcessedObservation]:
+    def _extract_unit_from_chat_title(self, chat_title: str) -> str:
+        """Extract unit name from chat title (first two words)"""
+        if not chat_title:
+            return 'Unknown Unit'
+        
+        words = chat_title.split()[:2]  # First two words
+        return ' '.join(words) if words else 'Unknown Unit'
+    
+    async def process_message(self, message, user_id: int, chat_id: int, 
+                             chat_title: str = None, username: str = None) -> Optional[ProcessedObservation]:
         """
         Main processing function for incoming messages
         Handles text, photos, and location data
@@ -69,6 +82,13 @@ class EnhancedMessageProcessor:
             
             # Update user activity
             user_manager.update_user_activity(user_id)
+            
+            # Extract unit name (first two words of chat title) and observer signature
+            self.current_context = {
+                'chat_title': chat_title or 'Unknown Group',
+                'username': username or user_profile.username or f'user_{user_id}',
+                'unit_from_chat': self._extract_unit_from_chat_title(chat_title) if chat_title else user_profile.unit
+            }
             
             # Determine message type and process accordingly
             if message.photo and len(message.photo) > 0:
@@ -87,7 +107,8 @@ class EnhancedMessageProcessor:
     
     async def _process_photo_message(self, message, user_profile, chat_id: int) -> Optional[ProcessedObservation]:
         """Process photo messages using vision model"""
-        if not self.openai_client:
+        openai_client = self._get_openai_client()
+        if not openai_client:
             self.logger.error("OpenAI client not available for vision processing")
             return None
         
@@ -106,7 +127,7 @@ class EnhancedMessageProcessor:
             vision_prompt = self._build_vision_analysis_prompt(user_profile)
             
             # Call OpenAI Vision API
-            response = await self.openai_client.chat.completions.create(
+            response = await openai_client.chat.completions.create(
                 model="gpt-4o-mini",  # Use vision-capable model
                 messages=[
                     {
@@ -184,8 +205,8 @@ class EnhancedMessageProcessor:
                 confidence_score=0.95,  # High confidence for pre-formatted
                 processing_method="manual_format",
                 user_id=user_profile.user_id,
-                username=user_profile.username,
-                unit=user_profile.unit,
+                username=getattr(self, 'current_context', {}).get('username', user_profile.username),
+                unit=getattr(self, 'current_context', {}).get('unit_from_chat', user_profile.unit),
                 mgrs=formatted_data.get('mgrs', 'UNKNOWN'),
                 timestamp=message.date.astimezone(timezone.utc),
                 requires_leader_notification=True,
@@ -200,7 +221,8 @@ class EnhancedMessageProcessor:
     
     async def _process_unformatted_message(self, message, user_profile, chat_id: int) -> Optional[ProcessedObservation]:
         """Process unformatted text using LLM"""
-        if not self.openai_client:
+        openai_client = self._get_openai_client()
+        if not openai_client:
             self.logger.error("OpenAI client not available for text processing")
             return None
         
@@ -209,7 +231,7 @@ class EnhancedMessageProcessor:
             text_prompt = self._build_text_analysis_prompt(message.text, user_profile)
             
             # Call OpenAI for text analysis and formatting
-            response = await self.openai_client.chat.completions.create(
+            response = await openai_client.chat.completions.create(
                 model="gpt-4o-mini",
                 messages=[
                     {
@@ -241,8 +263,8 @@ class EnhancedMessageProcessor:
                 confidence_score=0.75,  # Medium confidence for LLM formatting
                 processing_method="text_llm",
                 user_id=user_profile.user_id,
-                username=user_profile.username,
-                unit=user_profile.unit,
+                username=getattr(self, 'current_context', {}).get('username', user_profile.username),
+                unit=getattr(self, 'current_context', {}).get('unit_from_chat', user_profile.unit),
                 mgrs=self._extract_mgrs_from_message(message),
                 timestamp=message.date.astimezone(timezone.utc),
                 requires_leader_notification=True,

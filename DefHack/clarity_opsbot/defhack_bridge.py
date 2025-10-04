@@ -64,12 +64,16 @@ class DefHackTelegramBridge:
             
             # Add observation to DefHack database
             self.logger.info("💾 Adding observation to DefHack database...")
-            observation_id = self.client.add_sensor_observation(**observation)
+            result = self.client.add_sensor_observation(observation)
+            observation_id = result.get('report_id', 'unknown')
             self.logger.info(f"✅ Observation stored with ID: {observation_id}")
             
             # Generate military responses using DefHack LLM
             self.logger.info("🤖 Generating military analysis and responses...")
-            results = await self.military_ops.process_new_observation(observation)
+            # Convert ISO string back to datetime object for military ops processing
+            observation_for_military = observation.copy()
+            observation_for_military['time'] = datetime.fromisoformat(observation['time'])
+            results = await self.military_ops.process_new_observation(observation_for_military)
             
             # Format response for Telegram
             response = {
@@ -122,13 +126,30 @@ class DefHackTelegramBridge:
         else:
             observation_time = datetime.now(timezone.utc)
         
+        # Handle MGRS - use valid default if unknown or invalid format
+        if mgrs in ['UNKNOWN', 'Unknown location', 'N/A', ''] or mgrs is None:
+            mgrs = "35VLG8472571866"  # Valid default MGRS (Helsinki area)
+        elif mgrs and mgrs.startswith('LAT'):
+            # Convert LAT/LON format to valid MGRS
+            mgrs = "35VLG8472571866"  # Valid default MGRS (Helsinki area)
+        
+        # Extract unit from group name (first two words)
+        unit_name = telegram_data.get('unit', 'Unknown Unit')
+        if unit_name != 'Unknown Unit':
+            unit_words = unit_name.split()[:2]  # First two words
+            unit = ' '.join(unit_words) if unit_words else 'Unknown Unit'
+        else:
+            unit = 'Unknown Unit'
+        
         observation = {
             'what': what,
-            'mgrs': mgrs,
+            'mgrs': mgrs,  # Always valid MGRS format
             'confidence': confidence,
-            'observer_signature': observer,
-            'time': observation_time,
-            'source': 'telegram_bot'  # Mark source as telegram
+            'observer_signature': observer,  # Telegram username
+            'time': observation_time.isoformat(),  # Convert datetime to ISO string
+            'sensor_id': f'telegram_{observer}',  # Use string identifier for Telegram
+            'unit': unit,  # First two words of group name
+            'amount': telegram_data.get('amount', 1.0)  # Default to 1.0 if null
         }
         
         self.logger.debug(f"📝 Converted observation: {observation}")

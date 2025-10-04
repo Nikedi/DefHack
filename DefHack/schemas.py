@@ -10,17 +10,19 @@ _MGRS_RE = re.compile(r"^[0-9]{1,2}[C-HJ-NP-X][A-HJ-NP-Z]{2}[0-9]{2,10}$")
 class SensorObservationIn(BaseModel):
     """Input schema for tactical sensor observations from the field"""
     time: datetime = Field(description="When the observation was made (ISO 8601)")
-    mgrs: str = Field(description="Location in MGRS format (e.g., '35VLG8472571866')")
+    mgrs: str | None = Field(None, description="Location in MGRS format (e.g., '35VLG8472571866') or null if unknown")
     what: str = Field(description="What was observed (e.g., 'T-72 Tank', 'Infantry Squad')")
     amount: float | None = Field(None, description="Number/quantity observed")
     confidence: int = Field(ge=0, le=100, description="Observer confidence level (0-100)")
-    sensor_id: str = Field(description="ID of sensor/observer equipment")
+    sensor_id: str | None = Field(None, description="ID of sensor/observer equipment or null for human observers")
     unit: str | None = Field(None, description="Observing unit (e.g., 'Alpha Company, 2nd Platoon')")
     observer_signature: str = Field(min_length=3, description="Observer identification (e.g., 'CallSign' or 'FirstnameLastname')")
 
     @field_validator('mgrs')
     @classmethod
-    def validate_mgrs(cls, v: str) -> str:
+    def validate_mgrs(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
         v2 = v.replace(" ", "").upper()
         if not _MGRS_RE.match(v2):
             raise ValueError("Invalid MGRS format")
@@ -29,17 +31,19 @@ class SensorObservationIn(BaseModel):
 class SensorObservation(BaseModel):
     """Database schema for stored tactical sensor observations"""
     time: datetime = Field(description="When the observation was made (ISO 8601)")
-    mgrs: str = Field(description="Location in MGRS format (e.g., '35VLG8472571866')")
+    mgrs: str | None = Field(None, description="Location in MGRS format (e.g., '35VLG8472571866') or null if unknown")
     what: str = Field(description="What was observed (e.g., 'T-72 Tank', 'Infantry Squad')")
     amount: float | None = Field(None, description="Number/quantity observed")
     confidence: int = Field(ge=0, le=100, description="Observer confidence level (0-100)")
-    sensor_id: str = Field(description="ID of sensor/observer equipment")
+    sensor_id: str | None = Field(None, description="ID of sensor/observer equipment or null for human observers")
     unit: str | None = Field(None, description="Observing unit (e.g., 'Alpha Company, 2nd Platoon')")
     observer_signature: str = Field(min_length=3, description="Observer identification (e.g., 'CallSign' or 'FirstnameLastname')")
 
     @field_validator('mgrs')
     @classmethod
-    def validate_mgrs(cls, v: str) -> str:
+    def validate_mgrs(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
         v2 = v.replace(" ", "").upper()
         if not _MGRS_RE.match(v2):
             raise ValueError("Invalid MGRS format")

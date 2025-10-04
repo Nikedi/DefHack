@@ -62,8 +62,8 @@ class LeaderNotificationSystem:
         Process a new observation and send notifications to appropriate leaders
         """
         try:
-            # Store observation in DefHack database first
-            await self._store_observation_in_database(observation)
+            # Store observation in DefHack database first and capture raw data for debugging
+            observation_id, raw_db_data = await self._store_observation_in_database(observation)
             
             # Determine notification priority based on threat level
             priority = self._determine_priority(observation)
@@ -81,7 +81,9 @@ class LeaderNotificationSystem:
                     leader_user_id=leader.user_id,
                     observation=observation,
                     priority=priority,
-                    original_chat_id=chat_id
+                    original_chat_id=chat_id,
+                    observation_id=observation_id,
+                    raw_db_data=raw_db_data
                 )
             
             self.logger.info(f"Sent notifications to {len(leaders_to_notify)} leaders for observation from {observation.username}")
@@ -89,8 +91,8 @@ class LeaderNotificationSystem:
         except Exception as e:
             self.logger.error(f"Failed to process observation notification: {e}")
     
-    async def _store_observation_in_database(self, observation: 'ProcessedObservation') -> str:
-        """Store observation in DefHack database and return observation ID"""
+    async def _store_observation_in_database(self, observation: 'ProcessedObservation') -> tuple[str, dict]:
+        """Store observation in DefHack database and return observation ID and raw data"""
         try:
             # Convert ProcessedObservation to format expected by DefHack
             observation_data = {
@@ -110,7 +112,7 @@ class LeaderNotificationSystem:
             results = await self.defhack_bridge.process_telegram_observation(observation_data)
             
             if results.get('stored'):
-                return results.get('observation_id', 'unknown')
+                return results.get('observation_id', 'unknown'), observation_data
             else:
                 raise Exception("Failed to store observation in database")
                 
@@ -154,26 +156,56 @@ class LeaderNotificationSystem:
     async def _send_leader_notification(self, leader_user_id: int, 
                                       observation: 'ProcessedObservation',
                                       priority: NotificationPriority,
-                                      original_chat_id: int) -> None:
-        """Send notification to a specific leader"""
+                                      original_chat_id: int,
+                                      observation_id: str = None,
+                                      raw_db_data: dict = None) -> None:
+        """Send notification to a specific leader with debugging info"""
         try:
             # Format notification message
-            notification_msg = self._format_leader_notification(observation, priority)
-            
-            # Create inline keyboard for FRAGO request
-            keyboard = self._create_frago_request_keyboard(
-                observation.user_id, 
-                original_chat_id,
-                observation.timestamp.isoformat()
-            )
+            notification_msg = self._format_leader_notification(observation, priority, observation_id)
             
             # Send notification
             await self.bot.send_message(
                 chat_id=leader_user_id,
                 text=notification_msg,
-                reply_markup=keyboard,
-                parse_mode='Markdown'
+                parse_mode='HTML'
             )
+            
+            # Send debugging information with raw database data
+            if raw_db_data and observation_id:
+                debug_msg = f"🔧 <b>RAW DATABASE INPUT - Entry {observation_id}:</b>\n<code>"
+                for key, value in raw_db_data.items():
+                    if key == 'time' and hasattr(value, 'isoformat'):
+                        debug_msg += f"{key}: {value.isoformat()}\n"
+                    else:
+                        debug_msg += f"{key}: {str(value)[:100]}{'...' if len(str(value)) > 100 else ''}\n"
+                debug_msg += "</code>"
+                
+                await self.bot.send_message(
+                    chat_id=leader_user_id,
+                    text=debug_msg,
+                    parse_mode='HTML'
+                )
+                
+                # Send clean human-readable version without JSON formatting
+                clean_msg = f"📋 <b>HUMAN READABLE - Entry {observation_id}:</b>\n\n"
+                clean_msg += f"<b>What was seen:</b> {raw_db_data.get('what', 'Unknown')}\n"
+                clean_msg += f"<b>Location:</b> {raw_db_data.get('mgrs', 'Unknown')}\n"
+                clean_msg += f"<b>Observer:</b> {raw_db_data.get('observer_signature', 'Unknown')}\n"
+                clean_msg += f"<b>Time:</b> {raw_db_data.get('time', 'Unknown')}\n"
+                clean_msg += f"<b>Unit:</b> {raw_db_data.get('unit', 'Unknown')}\n"
+                clean_msg += f"<b>Confidence:</b> {raw_db_data.get('confidence', 'Unknown')}%\n"
+                clean_msg += f"<b>Threat Level:</b> {raw_db_data.get('threat_level', 'Unknown')}\n"
+                if raw_db_data.get('amount'):
+                    clean_msg += f"<b>Quantity:</b> {raw_db_data.get('amount')}\n"
+                clean_msg += f"<b>Processing:</b> {raw_db_data.get('processing_method', 'Unknown')}\n"
+                clean_msg += f"<b>Original Message:</b> {raw_db_data.get('original_message', 'Unknown')}"
+                
+                await self.bot.send_message(
+                    chat_id=leader_user_id,
+                    text=clean_msg,
+                    parse_mode='HTML'
+                )
             
             self.logger.info(f"Sent {priority.value} priority notification to leader {leader_user_id}")
             
@@ -181,7 +213,7 @@ class LeaderNotificationSystem:
             self.logger.error(f"Failed to send notification to leader {leader_user_id}: {e}")
     
     def _format_leader_notification(self, observation: 'ProcessedObservation', 
-                                  priority: NotificationPriority) -> str:
+                                  priority: NotificationPriority, observation_id: str = None) -> str:
         """Format the notification message for leaders"""
         priority_emoji = {
             NotificationPriority.CRITICAL: "🚨",
@@ -194,25 +226,28 @@ class LeaderNotificationSystem:
         
         formatted_time = observation.timestamp.strftime("%H:%M %d-%m-%Y")
         
-        message = f"{emoji} **TACTICAL OBSERVATION - {priority.value.upper()} PRIORITY**\n\n"
-        message += f"**Observer:** {observation.username}\n"
-        message += f"**Unit:** {observation.unit}\n"
-        message += f"**Time:** {formatted_time}\n"
-        message += f"**Location:** {observation.mgrs}\n"
-        message += f"**Threat Level:** {observation.threat_level}\n\n"
+        message = f"{emoji} <b>TACTICAL OBSERVATION - {priority.value.upper()} PRIORITY</b>\n\n"
+        message += f"<b>Observer:</b> {observation.username}\n"
+        message += f"<b>Unit:</b> {observation.unit}\n"
+        message += f"<b>Time:</b> {formatted_time}\n"
+        message += f"<b>Location:</b> {observation.mgrs}\n"
+        message += f"<b>Threat Level:</b> {observation.threat_level}\n\n"
         
-        message += f"**Observation:** {observation.formatted_data.get('what', 'Unknown')}\n"
+        message += f"<b>Observation:</b> {observation.formatted_data.get('what', 'Unknown')}\n"
         
         if observation.formatted_data.get('amount'):
-            message += f"**Quantity:** {observation.formatted_data['amount']}\n"
+            message += f"<b>Quantity:</b> {observation.formatted_data['amount']}\n"
         
-        message += f"**Confidence:** {observation.formatted_data.get('confidence', 50)}%\n"
-        message += f"**Processing:** {observation.processing_method.replace('_', ' ').title()}\n\n"
+        message += f"<b>Confidence:</b> {observation.formatted_data.get('confidence', 50)}%\n"
+        message += f"<b>Processing:</b> {observation.processing_method.replace('_', ' ').title()}\n\n"
         
         if observation.original_message != observation.formatted_data.get('what', ''):
-            message += f"**Original Report:** {observation.original_message[:200]}{'...' if len(observation.original_message) > 200 else ''}\n\n"
+            message += f"<b>Original Report:</b> {observation.original_message[:200]}{'...' if len(observation.original_message) > 200 else ''}\n\n"
         
-        message += "**Action Required:** Review observation and determine if FRAGO is needed."
+        if observation_id:
+            message += f"<b>Database ID:</b> {observation_id}\n\n"
+        
+        message += "<b>Action Required:</b> Review observation and determine if FRAGO is needed."
         
         return message
     

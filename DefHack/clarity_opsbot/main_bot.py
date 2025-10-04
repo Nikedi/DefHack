@@ -13,6 +13,20 @@ from pathlib import Path
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
+# Load environment variables from .env file
+try:
+    from dotenv import load_dotenv
+    env_file = project_root / ".env"
+    if env_file.exists():
+        load_dotenv(env_file)
+        print(f"✅ Loaded environment variables from {env_file}")
+    else:
+        print(f"⚠️ No .env file found at {env_file}")
+except ImportError:
+    print("⚠️ python-dotenv not installed, skipping .env file loading")
+except Exception as e:
+    print(f"❌ Error loading .env file: {e}")
+
 def main():
     """Main entry point for DefHack Telegram Bot"""
     

@@ -1,0 +1,26 @@
+{
+  "6052123817": {
+    "user_id": 6052123817,
+    "username": "aarnikonola",
+    "full_name": "Aarni Konola",
+    "role": "platoon_leader",
+    "unit": "2. PSTOS",
+    "rank": null,
+    "callsign": null,
+    "registered_at": "2025-10-04T08:11:01.198936+00:00",
+    "last_active": "2025-10-04T09:24:53.130952+00:00",
+    "phone_number": null
+  },
+  "887241145": {
+    "user_id": 887241145,
+    "username": "nikokataja",
+    "full_name": "Niko Kataja",
+    "role": "platoon_leader",
+    "unit": "1st batallion, alpha company, 3rd platoon",
+    "rank": null,
+    "callsign": null,
+    "registered_at": "2025-10-04T08:15:45.023010+00:00",
+    "last_active": "2025-10-04T09:24:06.665658+00:00",
+    "phone_number": null
+  }
+}

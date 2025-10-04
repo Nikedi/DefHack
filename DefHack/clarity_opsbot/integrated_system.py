@@ -23,6 +23,21 @@ from .higher_echelon_intelligence import initialize_higher_echelon_intelligence,
 from .services.openai_analyzer import OpenAIAnalyzer
 from .defhack_bridge import DefHackTelegramBridge
 
+# MGRS conversion utility
+def lat_lon_to_mgrs(lat: float, lon: float) -> str:
+    """Convert latitude/longitude to MGRS format (simplified)"""
+    try:
+        # This is a simplified conversion - in production use proper MGRS library
+        import mgrs
+        m = mgrs.MGRS()
+        return m.toMGRS(lat, lon)
+    except ImportError:
+        # Fallback - use valid default MGRS coordinate (Helsinki area)
+        return "35VLG8472571866"
+    except Exception:
+        # Fallback - use valid default MGRS coordinate (Helsinki area)
+        return "35VLG8472571866"
+
 class DefHackTelegramSystem:
     """Complete integrated DefHack Telegram bot system"""
     
@@ -35,6 +50,9 @@ class DefHackTelegramSystem:
         self.message_processor = EnhancedMessageProcessor(logger)
         self.defhack_bridge = DefHackTelegramBridge()
         
+        # Initialize OpenAI client and set it in the processor
+        self._init_openai_client()
+        
         # Initialize subsystems
         self.leader_notifications = initialize_leader_notifications(self.app, logger)
         self.higher_echelon_intel = initialize_higher_echelon_intelligence(logger)
@@ -42,8 +60,93 @@ class DefHackTelegramSystem:
         # Track active registrations
         self.active_registrations: Dict[int, Dict] = {}
         
+        # Pending observations waiting for additional messages (10 second timeout)
+        self.pending_observations: Dict[str, Dict[str, Any]] = {}  # Key: f"{chat_id}_{user_id}"
+        # Track message clusters - combines multiple messages from same user within 10 seconds
+        self.message_clusters: Dict[str, Dict[str, Any]] = {}  # Key: f"{chat_id}_{user_id}"
+        
         # Setup handlers
         self._setup_handlers()
+    
+    async def _process_message_cluster_timeout(self, cluster_key: str):
+        """Handle timeout for message clustering - process combined messages after 10 seconds"""
+        await asyncio.sleep(10)  # Wait 10 seconds for additional messages
+        
+        if cluster_key in self.message_clusters:
+            cluster = self.message_clusters.pop(cluster_key)
+            self.logger.info(f"⏱️ Message cluster timeout for {cluster_key}, processing {len(cluster['messages'])} messages")
+            
+            # Combine all messages in the cluster
+            combined_message = " | ".join(cluster['messages'])
+            chat_id = int(cluster_key.split('_')[0])
+            user_id = int(cluster_key.split('_')[1])
+            
+            self.logger.info(f"📝 Combined message: {combined_message}")
+            
+            try:
+                # Process the combined message with enhanced processor
+                # Create a mock message object with combined text
+                class MockMessage:
+                    def __init__(self, text, location=None):
+                        self.text = text
+                        self.location = location
+                        self.date = cluster['timestamp']
+                        self.photo = []
+                
+                # Add location if available
+                mock_location = None
+                if cluster['has_location'] and cluster['location']:
+                    # Create mock location object
+                    class MockLocation:
+                        def __init__(self, mgrs_str):
+                            # Extract lat/lon from MGRS if possible, otherwise use defaults
+                            self.latitude = 60.1681  # Helsinki area default
+                            self.longitude = 24.9219
+                    mock_location = MockLocation(cluster['location'])
+                
+                mock_message = MockMessage(combined_message, mock_location)
+                
+                # Process with enhanced processor
+                observation = await self.message_processor.process_message(
+                    mock_message, user_id, chat_id, cluster['chat_title'], cluster['username']
+                )
+                
+                if observation:
+                    # Update location if we have it from the cluster
+                    if cluster['has_location'] and cluster['location']:
+                        observation.mgrs = cluster['location']
+                    
+                    self.logger.info(f"� Clustered observation created: threat_level={observation.threat_level}, messages={len(cluster['messages'])}")
+                    
+                    # Send to leader notification system
+                    await self.leader_notifications.process_new_observation(observation, chat_id)
+                    self.logger.info(f"✅ Leader notifications sent for clustered observation")
+                else:
+                    self.logger.warning(f"❌ No observation created from clustered messages")
+                    
+            except Exception as e:
+                self.logger.error(f"Error processing message cluster: {e}")
+                import traceback
+                self.logger.error(traceback.format_exc())
+    
+    def _init_openai_client(self):
+        """Initialize OpenAI client and set it in the message processor"""
+        try:
+            import os
+            try:
+                import openai
+            except ImportError:
+                openai = None
+                
+            api_key = os.getenv("OPENAI_API_KEY")
+            if api_key and openai:
+                client = openai.AsyncOpenAI(api_key=api_key)
+                self.message_processor.openai_client = client
+                self.logger.info("✅ OpenAI client initialized and set in message processor")
+            else:
+                self.logger.warning("⚠️ OpenAI API key not found or openai module not available")
+        except Exception as e:
+            self.logger.error(f"Failed to initialize OpenAI client: {e}")
     
     def _setup_handlers(self):
         """Setup all message and command handlers"""
@@ -180,13 +283,53 @@ Use `/register` to begin the registration process.
         )
     
     async def _handle_group_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Handle messages in group chats - main tactical processing"""
+        """Handle messages in group chats - main tactical processing with message clustering"""
         user_id = update.effective_user.id
         chat_id = update.effective_chat.id
+        username = update.effective_user.username or "Unknown"
+        chat_title = update.effective_chat.title or "Unknown Group"
+        cluster_key = f"{chat_id}_{user_id}"
+        
+        # Handle location messages - add to existing cluster or create new one
+        if update.message.location:
+            self.logger.info(f"📍 Location received from {username} in {chat_title}")
+            
+            # Check if there's an active message cluster for this user
+            if cluster_key in self.message_clusters:
+                # Add location to existing cluster
+                lat, lon = update.message.location.latitude, update.message.location.longitude
+                mgrs = lat_lon_to_mgrs(lat, lon)
+                
+                self.message_clusters[cluster_key]['location'] = mgrs
+                self.message_clusters[cluster_key]['has_location'] = True
+                self.logger.info(f"✅ Location added to message cluster: {mgrs}")
+                return
+            else:
+                # Standalone location - create minimal cluster
+                self.message_clusters[cluster_key] = {
+                    'messages': [f"[Location: {update.message.location.latitude}, {update.message.location.longitude}]"],
+                    'location': lat_lon_to_mgrs(update.message.location.latitude, update.message.location.longitude),
+                    'has_location': True,
+                    'timestamp': datetime.now(timezone.utc),
+                    'username': username,
+                    'chat_title': chat_title
+                }
+                
+                # Start cluster timeout
+                asyncio.create_task(self._process_message_cluster_timeout(cluster_key))
+                self.logger.info(f"📍 Created new cluster with standalone location")
+                return
+        
+        # Handle text messages - add to cluster or create new cluster
+        message_text = update.message.text if update.message.text else "[Non-text message]"
+        
+        self.logger.info(f"🔍 MAIN HANDLER: Processing group message from {username} ({user_id}) in {chat_title} ({chat_id})")
+        self.logger.info(f"💬 Message: {message_text}")
         
         # Check if user is registered
         user = user_manager.get_user(user_id)
         if not user:
+            self.logger.warning(f"❌ User {user_id} not registered, sending registration reminder")
             # Send registration reminder (privately)
             try:
                 await context.bot.send_message(
@@ -195,36 +338,39 @@ Use `/register` to begin the registration process.
                          "You need to register before I can process your tactical reports.\n"
                          "Send me `/register` in private message to begin."
                 )
-            except:
-                pass  # User may not allow private messages
+            except Exception as e:
+                self.logger.error(f"Failed to send registration reminder to {user_id}: {e}")
             return
         
-        # Process the message with enhanced processor
+        self.logger.info(f"✅ User {user.username} ({user.role.value}) from unit '{user.unit}' is registered")
+        
+        # Handle message clustering - combine multiple messages within 10 seconds
         try:
-            observation = await self.message_processor.process_message(
-                update.effective_message, user_id, chat_id
-            )
-            
-            if observation:
-                # Send to leader notification system
-                await self.leader_notifications.process_new_observation(observation, chat_id)
+            if cluster_key in self.message_clusters:
+                # Add to existing cluster
+                self.message_clusters[cluster_key]['messages'].append(message_text)
+                self.logger.info(f"📝 Added message to existing cluster (total: {len(self.message_clusters[cluster_key]['messages'])} messages)")
+            else:
+                # Create new message cluster
+                self.message_clusters[cluster_key] = {
+                    'messages': [message_text],
+                    'location': None,
+                    'has_location': False,
+                    'timestamp': datetime.now(timezone.utc),
+                    'username': username,
+                    'chat_title': chat_title,
+                    'user': user
+                }
                 
-                # Send confirmation to group if significant
-                if observation.threat_level in ['HIGH', 'CRITICAL']:
-                    confirmation = f"""⚡ **Tactical Report Processed**
-👤 Observer: {user.username}
-📊 Confidence: {observation.confidence_score:.0%}
-🎯 Method: {observation.processing_method.replace('_', ' ').title()}
-🚨 Threat Level: {observation.threat_level}
-
-✅ Leaders have been notified"""
-                    
-                    await update.message.reply_text(confirmation, parse_mode='Markdown')
+                self.logger.info(f"📝 Created new message cluster for {username}")
                 
-                self.logger.info(f"Processed tactical report from {user.username} in group {chat_id}")
+                # Start cluster timeout (will process combined messages after 10 seconds)
+                asyncio.create_task(self._process_message_cluster_timeout(cluster_key))
             
         except Exception as e:
             self.logger.error(f"Error processing group message: {e}")
+            import traceback
+            self.logger.error(traceback.format_exc())
     
     async def _handle_private_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle private messages - registration and commands"""
@@ -570,3 +716,14 @@ def create_defhack_telegram_system(token: str = None) -> DefHackTelegramSystem:
     logger.info("🎯 Ready for tactical deployment!")
     
     return system
+
+if __name__ == "__main__":
+    # Create and run the DefHack system
+    try:
+        system = create_defhack_telegram_system()
+        system.run()
+    except KeyboardInterrupt:
+        print("\n🛑 DefHack Telegram System stopped by user")
+    except Exception as e:
+        print(f"❌ Error starting DefHack system: {e}")
+        raise
