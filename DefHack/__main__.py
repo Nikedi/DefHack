@@ -30,6 +30,7 @@ DEFAULT_API_URL = "http://172.20.10.5:8080/ingest/sensor"
 DEFAULT_API_KEY = "583C55345736D7218355BCB51AA47"
 DEFAULT_SAVE_FOLDER = Path(__file__).parent / "sensors" / "images" / "current_image"
 DEFAULT_BACKLOG_PATH = Path(__file__).parent / "sensor_backlog.json"
+DEFAULT_UNIT_LABEL = "Alpha Company"
 
 
 @dataclass
@@ -74,7 +75,10 @@ def parse_args(argv: Sequence[str]) -> AppConfig:
 	parser.add_argument(
 		"--unit",
 		default=None,
-		help="Unit label for the sensor readings (default: use pipeline-provided value)",
+		help=(
+			"Unit label for the sensor readings (default: use pipeline-provided value; "
+			f"falls back to '{DEFAULT_UNIT_LABEL}' when unspecified)"
+		),
 	)
 	parser.add_argument(
 		"--observer-signature",
@@ -104,7 +108,7 @@ def parse_args(argv: Sequence[str]) -> AppConfig:
 		interval=max(1.0, args.interval),
 		mgrs=args.mgrs,
 		sensor_id=args.sensor_id,
-		unit=args.unit or None,
+		unit=args.unit.strip() if args.unit else None,
 		observer_signature=args.observer_signature,
 		api_url=args.api_url,
 		api_key=args.api_key or None,
@@ -192,7 +196,11 @@ def _save_backlog(path: Path, backlog: Sequence[dict[str, object]]) -> None:
 def _canonicalise_payload(raw: dict[str, Any], *, unit_override: Optional[str] = None) -> dict[str, object]:
 	timestamp = _format_timestamp(raw.get("time"))
 	mgrs_value = raw.get("mgrs")
-	unit_value = unit_override if unit_override is not None else raw.get("2. PSTOS")
+	unit_value = unit_override if unit_override is not None else raw.get("unit")
+	if isinstance(unit_value, str):
+		unit_value = unit_value.strip()
+	if not unit_value:
+		unit_value = DEFAULT_UNIT_LABEL
 	sensor_id_value = raw.get("sensor_id")
 	observer_signature = raw.get("observer_signature")
 	confidence_raw = raw.get("confidence", 0)

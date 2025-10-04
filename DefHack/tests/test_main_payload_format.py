@@ -1,6 +1,11 @@
 from datetime import datetime, timezone
 
-from DefHack.__main__ import _canonicalise_payload, _deliver_readings, _prepare_payloads
+from DefHack.__main__ import (
+	DEFAULT_UNIT_LABEL,
+	_canonicalise_payload,
+	_deliver_readings,
+	_prepare_payloads,
+)
 from DefHack.sensors.SensorSchema import SensorObservationIn
 
 
@@ -47,7 +52,7 @@ def test_prepare_payload_omits_optional_nulls():
 	reading = _make_reading(amount=None, unit=None, original_message=None, sensor_id="EXT-SENSOR")
 	record = _prepare_payloads([reading], unit_override=None)[0]
 	assert "amount" not in record
-	assert "unit" not in record
+	assert record["unit"] == DEFAULT_UNIT_LABEL
 	assert "original_message" not in record
 	assert record["sensor_id"] == "EXT-SENSOR"
 
@@ -68,7 +73,7 @@ def test_canonicalise_payload_handles_backlog_dict_with_missing_fields():
 	assert structured["sensor_id"] == "UNKNOWN"
 	assert structured["observer_signature"] == "UNKNOWN"
 	assert structured["amount"] == 3.0
-	assert "unit" not in structured
+	assert structured["unit"] == DEFAULT_UNIT_LABEL
 	assert "original_message" not in structured
 
 
@@ -120,4 +125,5 @@ def test_deliver_readings_debug_prints_payload(tmp_path, capsys):
 	stdout = capsys.readouterr().out
 	assert "DEBUG payload ->" in stdout
 	assert '"sensor_id": "SENSOR-1"' in stdout
+	assert f'"unit": "{DEFAULT_UNIT_LABEL}"' in stdout
 	assert posted == [_canonicalise_payload(initial_payload)]
