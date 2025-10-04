@@ -200,7 +200,7 @@ class OpenAIAnalyzer:
             "- Copy unit and observer_signature exactly as provided\n"
             "- sensor_id MUST always be null for manual observations\n"
             "- mgrs must be uppercase without spaces; use 'UNKNOWN' if location unclear\n"
-            "- Combine data from multiple messages into single observations when appropriate\n"
+            "- Combine data from multiple messages into a single observation. Especially when text and location data are available. \n"
             "- Return empty array [] if no actionable intelligence found\n"
             "- Confidence should reflect certainty of observation (confirmed=90+, likely=70-89, possible=40-69)\n\n"
             "Tactical Messages to Analyze:\n"
