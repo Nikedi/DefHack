@@ -12,3 +12,5 @@ boto3
 python-dotenv
 openai
 pypdf
+utm
+python-telegram-bot

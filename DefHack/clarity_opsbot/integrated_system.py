@@ -530,13 +530,35 @@ class DefHackIntegratedSystem:
             await self.initialize()
         
         self.logger.info("🚀 Starting DefHack Telegram bot...")
-        await self.app.run_polling(allowed_updates=Update.ALL_TYPES)
+        # Use polling with close_loop=False to avoid event loop conflicts
+        await self.app.run_polling(allowed_updates=Update.ALL_TYPES, close_loop=False)
     
     async def stop_bot(self):
         """Stop the bot gracefully"""
         if self.app:
             self.logger.info("🛑 Stopping DefHack bot...")
             await self.app.stop()
+    
+    def run(self):
+        """Synchronous method to run the bot (wrapper around start_bot)"""
+        try:
+            # Check if we're already in an event loop
+            try:
+                loop = asyncio.get_running_loop()
+                # If we're in an event loop, we need to use different approach
+                self.logger.warning("Already in event loop, using create_task approach")
+                import asyncio
+                task = loop.create_task(self.start_bot())
+                # This won't work well in Jupyter/existing loop, so let's use a different approach
+                return task
+            except RuntimeError:
+                # No event loop running, safe to use asyncio.run
+                asyncio.run(self.start_bot())
+        except KeyboardInterrupt:
+            self.logger.info("👋 Bot stopped by user")
+        except Exception as e:
+            self.logger.error(f"❌ Error running bot: {e}")
+            raise
 
 
 # Create global instance for import
@@ -548,3 +570,30 @@ def get_system(token: str = None) -> DefHackIntegratedSystem:
     if defhack_system is None and token:
         defhack_system = DefHackIntegratedSystem(token)
     return defhack_system
+
+def create_defhack_telegram_system() -> DefHackIntegratedSystem:
+    """Create DefHack Telegram system with token from environment"""
+    import os
+    
+    # Get Telegram bot token from environment
+    token = os.getenv('TELEGRAM_BOT_TOKEN')
+    if not token:
+        raise ValueError("TELEGRAM_BOT_TOKEN environment variable is required")
+    
+    # Create and return the system
+    return DefHackIntegratedSystem(token)
+
+async def main():
+    """Main entry point for running the bot"""
+    try:
+        system = create_defhack_telegram_system()
+        await system.start_bot()
+    except KeyboardInterrupt:
+        print("\n👋 DefHack Telegram Bot shutting down...")
+    except Exception as e:
+        print(f"❌ Error: {e}")
+        import traceback
+        traceback.print_exc()
+
+if __name__ == "__main__":
+    asyncio.run(main())

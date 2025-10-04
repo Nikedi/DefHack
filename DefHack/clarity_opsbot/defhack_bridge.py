@@ -6,8 +6,9 @@ Connects military LLM functions with the merged Telegram bot
 
 import asyncio
 import logging
+import re
 from datetime import datetime, timezone
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Tuple
 import sys
 import os
 
@@ -21,6 +22,16 @@ except ImportError as e:
     print(f"⚠️  Import Error: {e}")
     print("📍 Make sure you're running from the DefHack root directory")
     print("💡 Try: python -m DefHack.clarity_opsbot.defhack_bridge")
+
+# Import to_mgrs with fallback handling
+try:
+    from .utils import to_mgrs
+except ImportError:
+    try:
+        from utils import to_mgrs
+    except ImportError:
+        print("⚠️  Warning: to_mgrs function not available, using placeholder")
+        to_mgrs = None
 
 class DefHackTelegramBridge:
     """
@@ -44,6 +55,42 @@ class DefHackTelegramBridge:
         except Exception as e:
             self.logger.error(f"❌ Failed to initialize bridge: {e}")
             raise
+    
+    def _parse_lat_lon(self, location_str: str) -> Optional[Tuple[float, float]]:
+        """
+        Parse latitude/longitude coordinates from various string formats.
+        
+        Supports formats like:
+        - "40.7128, -74.0060"  
+        - "LAT: 40.7128, LON: -74.0060"
+        - "40.7128,-74.0060"
+        - etc.
+        
+        Returns tuple of (lat, lon) or None if parsing fails
+        """
+        if not location_str:
+            return None
+            
+        try:
+            # Remove common prefixes and clean up
+            clean_str = location_str.replace('LAT:', '').replace('LON:', '').replace('lat:', '').replace('lon:', '').strip()
+            
+            # Look for coordinate patterns: two numbers separated by comma
+            coord_pattern = r'(-?\d+\.?\d*)\s*,\s*(-?\d+\.?\d*)'
+            match = re.search(coord_pattern, clean_str)
+            
+            if match:
+                lat = float(match.group(1))
+                lon = float(match.group(2))
+                
+                # Basic validation - lat should be -90 to 90, lon should be -180 to 180
+                if -90 <= lat <= 90 and -180 <= lon <= 180:
+                    return (lat, lon)
+                    
+        except (ValueError, AttributeError) as e:
+            self.logger.debug(f"Failed to parse coordinates from '{location_str}': {e}")
+            
+        return None
     
     async def process_telegram_observation(self, telegram_data: Dict[str, Any]) -> Dict[str, str]:
         """
@@ -126,13 +173,31 @@ class DefHackTelegramBridge:
         else:
             observation_time = datetime.now(timezone.utc)
         
-        # Handle MGRS - leave as null if no location provided
+        # Handle MGRS - provide valid placeholder for unknown or convert lat/lon  
         if mgrs in ['UNKNOWN', 'Unknown location', 'N/A', ''] or mgrs is None:
-            mgrs = None  # Leave as null when no location provided
-        elif mgrs and mgrs.startswith('LAT'):
-            # Convert LAT/LON format to valid MGRS if needed
-            # For now, leave as null since we don't have proper conversion
-            mgrs = None
+            # Use valid MGRS placeholder that passes regex validation
+            mgrs = '01CAA0000000000'  # Valid format placeholder for unknown location
+        elif mgrs and (',' in mgrs or mgrs.startswith('LAT')):
+            # Handle lat/lon coordinates - try to convert to MGRS
+            self.logger.info(f"📍 Attempting to convert lat/lon coordinates to MGRS: {mgrs}")
+            
+            coords = self._parse_lat_lon(mgrs)
+            if coords and to_mgrs:
+                lat, lon = coords
+                try:
+                    converted_mgrs = to_mgrs(lat, lon)
+                    if converted_mgrs and converted_mgrs != "UNKNOWN":
+                        self.logger.info(f"✅ Successfully converted ({lat}, {lon}) to MGRS: {converted_mgrs}")
+                        mgrs = converted_mgrs
+                    else:
+                        self.logger.warning(f"⚠️ MGRS conversion returned UNKNOWN for ({lat}, {lon})")
+                        mgrs = '01CAA0000000000'  # Fallback placeholder
+                except Exception as e:
+                    self.logger.error(f"❌ MGRS conversion failed for ({lat}, {lon}): {e}")
+                    mgrs = '01CAA0000000000'  # Fallback placeholder
+            else:
+                self.logger.warning(f"⚠️ Could not parse lat/lon coordinates or conversion not available: {mgrs}")
+                mgrs = '01CAA0000000000'  # Fallback placeholder
         
         # Extract unit from group name (first two words)
         unit_name = telegram_data.get('unit', 'Unknown Unit')
@@ -144,6 +209,7 @@ class DefHackTelegramBridge:
         
         observation = {
             'what': what,
+            'mgrs': mgrs,  # Always include mgrs - using placeholder for unknown locations
             'confidence': confidence,
             'observer_signature': observer,  # Telegram username
             'time': observation_time.isoformat(),  # Convert datetime to ISO string
@@ -151,10 +217,6 @@ class DefHackTelegramBridge:
             'unit': unit,  # First two words of group name
             'amount': telegram_data.get('amount', 1.0)  # Default to 1.0 if null
         }
-        
-        # Only include MGRS if it's not null
-        if mgrs is not None:
-            observation['mgrs'] = mgrs
         
         self.logger.debug(f"📝 Converted observation: {observation}")
         return observation

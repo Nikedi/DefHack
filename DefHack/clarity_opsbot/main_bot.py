@@ -57,7 +57,8 @@ def main():
         print("=" * 60)
         
         # Start the bot
-        system.run()
+        import asyncio
+        asyncio.run(system.start_bot())
         
     except KeyboardInterrupt:
         print("\n👋 DefHack Telegram Bot shutting down...")

@@ -8,7 +8,7 @@
     "rank": null,
     "callsign": null,
     "registered_at": "2025-10-04T08:11:01.198936+00:00",
-    "last_active": "2025-10-04T12:02:41.518057+00:00",
+    "last_active": "2025-10-04T14:24:52.727184+00:00",
     "phone_number": null
   },
   "887241145": {
@@ -20,7 +20,7 @@
     "rank": null,
     "callsign": null,
     "registered_at": "2025-10-04T08:15:45.023010+00:00",
-    "last_active": "2025-10-04T12:15:48.245646+00:00",
+    "last_active": "2025-10-04T14:24:17.122970+00:00",
     "phone_number": null
   },
   "12345": {
@@ -128,7 +128,7 @@
     "rank": null,
     "callsign": null,
     "registered_at": "2025-10-04T12:01:43.605932+00:00",
-    "last_active": "2025-10-04T12:06:14.165201+00:00",
+    "last_active": "2025-10-04T14:25:18.806373+00:00",
     "phone_number": null
   }
 }
