@@ -34,37 +34,40 @@ def format_log(record: Dict[str, str]) -> str:
 
 
 def to_mgrs(lat: float, lon: float) -> str:
-    """Convert latitude/longitude to MGRS format string."""
-    # Try the proper MGRS library first
-    if _MGRS is not None:
-        try:
-            value = _MGRS.toMGRS(lat, lon)
-            if isinstance(value, bytes):
-                value = value.decode("utf-8")
-            return value.replace(" ", "").upper()
-        except Exception:  # pragma: no cover - defensive fallback
-            pass
+    """Convert latitude/longitude to MGRS format string using proper MGRS library.
     
-    # Fallback to UTM-based conversion
-    if utm is not None:
+    Example usage from mgrs library:
+    >>> import mgrs
+    >>> m = mgrs.MGRS()
+    >>> c = m.toMGRS(42.0, -93.0)
+    >>> c
+    '15TWG0000049776'
+    """
+    # Use the proper MGRS library - this is the authoritative conversion
+    if mgrs is not None and _MGRS is not None:
         try:
-            easting, northing, zone_number, zone_letter = utm.from_latlon(lat, lon)
-            # Create a simplified MGRS-like format: ZZ[L][grid][easting][northing]
-            # This is not true MGRS but follows a similar pattern and passes validation
-            simplified_mgrs = f"{zone_number:02d}{zone_letter.upper()}{int(easting):05d}{int(northing):06d}"
+            # Convert to MGRS using the standard precision (default)
+            # The library handles precision automatically
+            mgrs_coordinate = _MGRS.toMGRS(lat, lon)
             
-            # Ensure it matches the MGRS regex pattern: ^[0-9]{1,2}[C-HJ-NP-X][A-HJ-NP-Z]{2}[0-9]{2,10}$
-            # We need to add a 2-letter grid square identifier
-            # For simplicity, use fixed letters that are valid in MGRS
-            grid_square = "AA"  # Valid MGRS grid square letters
-            final_mgrs = f"{zone_number:02d}{zone_letter.upper()}{grid_square}{int(easting):06d}{int(northing):06d}"
+            # Handle bytes return (if applicable)
+            if isinstance(mgrs_coordinate, bytes):
+                mgrs_coordinate = mgrs_coordinate.decode("utf-8")
             
-            return final_mgrs[:15]  # Limit to reasonable length
+            # Return the MGRS coordinate as-is (library returns proper format)
+            return mgrs_coordinate.strip().upper()
             
-        except Exception:  # pragma: no cover - defensive fallback
-            pass
+        except Exception as e:
+            # Log the error with more detail
+            print(f"⚠️ MGRS conversion failed for lat={lat}, lon={lon}: {e}")
+            return "UNKNOWN"
     
-    # Final fallback
+    # If MGRS library is not available, return UNKNOWN
+    if mgrs is None:
+        print("⚠️ MGRS library not available - install with: pip install mgrs")
+    elif _MGRS is None:
+        print("⚠️ MGRS instance not created properly")
+    
     return "UNKNOWN"
 
 
