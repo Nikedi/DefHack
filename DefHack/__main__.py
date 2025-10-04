@@ -16,7 +16,7 @@ import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Iterable, List, Optional, Sequence
+from typing import Any, Iterable, List, Optional, Sequence
 
 import cv2
 from urllib import error, request
@@ -187,6 +187,34 @@ def _save_backlog(path: Path, backlog: Sequence[dict[str, object]]) -> None:
 		print(f"Warning: failed to persist backlog {path}: {exc}")
 
 
+def _canonicalise_payload(raw: dict[str, Any], *, unit_override: Optional[str] = None) -> dict[str, object]:
+	timestamp = _format_timestamp(raw.get("time"))
+	mgrs_value = raw.get("mgrs")
+	unit_value = unit_override if unit_override is not None else raw.get("unit")
+	sensor_id_value = raw.get("sensor_id")
+	observer_signature = raw.get("observer_signature")
+	structured: dict[str, object] = {
+		"time": timestamp,
+		"mgrs": _format_mgrs(mgrs_value if isinstance(mgrs_value, str) else (str(mgrs_value) if mgrs_value is not None else None)),
+		"what": "TACTICAL"+_normalise_what(str(raw.get("what") or "")),
+		"confidence": int(raw.get("confidence", 0)),
+		"sensor_id": str(sensor_id_value) if sensor_id_value else "UNSENT",
+		"observer_signature": str(observer_signature) if observer_signature else "yolov8n classifier",
+	}
+	if unit_value:
+		structured["unit"] = str(unit_value)
+	amount = raw.get("amount")
+	if amount is not None:
+		try:
+			structured["amount"] = float(amount)
+		except (TypeError, ValueError):
+			pass
+	original_message = raw.get("original_message")
+	if original_message is not None:
+		structured["original_message"] = original_message
+	return structured
+
+
 def _post_payload(payload: dict[str, object], *, url: str, api_key: Optional[str], timeout: float) -> bool:
 	encoded = json.dumps(payload).encode("utf-8")
 	req = request.Request(url, data=encoded, method="POST")
@@ -221,28 +249,7 @@ def _prepare_payloads(
 			payload = reading.model_dump(mode="python")
 		except AttributeError:
 			payload = reading.dict()  # type: ignore[attr-defined]
-		timestamp = _format_timestamp(payload.get("time"))
-		amount = payload.get("amount")
-		unit_value = unit_override if unit_override is not None else payload.get("unit")
-		structured: dict[str, object] = {
-			"time": timestamp,
-			"mgrs": _format_mgrs(payload.get("mgrs")),
-			"what": _normalise_what(payload.get("what")),
-			"confidence": int(payload.get("confidence", 0)),
-			"observer_signature": payload.get("observer_signature"),
-			"sensor_id": payload.get("sensor_id") or "UNKNOWN",
-		}
-		if unit_value:
-			structured["unit"] = unit_value
-		if amount is not None:
-			try:
-				structured["amount"] = float(amount)
-			except (TypeError, ValueError):
-				pass
-		original_message = payload.get("original_message")
-		if original_message is not None:
-			structured["original_message"] = original_message
-		payloads.append(structured)
+		payloads.append(_canonicalise_payload(payload, unit_override=unit_override))
 	return payloads
 
 
@@ -257,13 +264,13 @@ def _deliver_readings(
 	if not payloads and not backlog_path.exists():
 		return
 
-	backlog = _load_backlog(backlog_path)
-	backlog.extend(payloads)
+	backlog_entries = [_canonicalise_payload(item) for item in _load_backlog(backlog_path)]
+	backlog_entries.extend(_canonicalise_payload(item) for item in payloads)
 
 	remaining: List[dict[str, object]] = []
 	delivered = 0
 
-	for payload in backlog:
+	for payload in backlog_entries:
 		if _post_payload(payload, url=url, api_key=api_key, timeout=timeout):
 			delivered += 1
 			print(f"Delivered reading: {payload.get('what')} @ {payload.get('time')}")
