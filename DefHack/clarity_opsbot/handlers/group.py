@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import io
 import logging
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -12,6 +13,7 @@ from telegram.ext import CommandHandler, ContextTypes, MessageHandler, filters
 
 from ..services.map_manager import MapManager
 from ..services.openai_analyzer import OpenAIAnalyzer
+from ..services.speech import SpeechTranscriber
 from ..utils import format_log, get_observer_signature, get_unit, to_mgrs, utc_iso
 
 
@@ -27,12 +29,13 @@ class PendingObservation:
     observer: Optional[str]
     tags: Sequence[str]
     timestamp: datetime
+    source_type: str
 
 
 def create_group_handlers(
     analyzer: OpenAIAnalyzer,
     logger: logging.Logger,
-    transcriber=None,
+    transcriber: Optional[SpeechTranscriber] = None,
     *,
     map_manager: Optional[MapManager] = None,
 ) -> List[Union[MessageHandler, CommandHandler]]:
@@ -78,6 +81,7 @@ def create_group_handlers(
             },
         )
         if map_manager:
+            source_type = "voice" if source == "voice" else "text"
             tags: Sequence[str] = ("human", "voice") if source == "voice" else ("human", "text")
             _prune_pending(chat.id, msg.date)
             pending_chat = pending_observations.setdefault(chat.id, {})
@@ -89,6 +93,7 @@ def create_group_handlers(
                 observer=observer,
                 tags=tags,
                 timestamp=msg.date,
+                source_type=source_type,
             )
             await map_manager.add_observation(
                 chat_id=chat.id,
@@ -112,6 +117,53 @@ def create_group_handlers(
         if chat.type not in ("group", "supergroup"):
             return
         await _process_observation(chat, msg, msg.text)
+
+    async def on_group_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        msg = update.effective_message
+        if not msg or not msg.voice or msg.from_user is None or msg.from_user.is_bot:
+            return
+        chat = update.effective_chat
+        if chat.type not in ("group", "supergroup"):
+            return
+        if transcriber is None or not transcriber.available:
+            logger.warning("Voice message ignored; transcription disabled.")
+            await msg.reply_text(
+                "Voice transcription isn't configured; please send the observation as text.",
+                reply_to_message_id=msg.message_id,
+            )
+            return
+
+        try:
+            voice_file = await context.bot.get_file(msg.voice.file_id)
+        except Exception:  # pragma: no cover - network I/O
+            logger.exception("Failed to fetch voice file metadata from Telegram.")
+            return
+
+        buffer = io.BytesIO()
+        try:
+            await voice_file.download_to_memory(out=buffer)
+        except Exception:  # pragma: no cover - network I/O
+            logger.exception("Failed to download voice note for transcription.")
+            return
+
+        mime_type = msg.voice.mime_type or "audio/ogg"
+        transcript = await transcriber.transcribe(
+            buffer.getvalue(),
+            filename=f"voice_{msg.voice.file_unique_id}.ogg",
+            mime_type=mime_type,
+        )
+        if not transcript:
+            await msg.reply_text(
+                "Couldn't transcribe that voice message. Please try again or send text.",
+                reply_to_message_id=msg.message_id,
+            )
+            return
+
+        await msg.reply_text(
+            f"Transcribed voice note:\n{transcript}",
+            reply_to_message_id=msg.message_id,
+        )
+        await _process_observation(chat, msg, transcript, source="voice")
 
     async def on_group_location(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         msg = update.effective_message
@@ -166,6 +218,7 @@ def create_group_handlers(
             unit_for_map = unit
             observer_for_map = observer
             tags: Sequence[str] = ("friendly", "location")
+            source_type_for_map = "sensor"
             if pending and msg.date - pending.timestamp <= PENDING_LOCATION_WINDOW:
                 text_content = pending.text
                 what_content = pending.what or pending.text
@@ -174,6 +227,7 @@ def create_group_handlers(
                 merged_tags = set(pending.tags)
                 merged_tags.update({"friendly", "location"})
                 tags = tuple(sorted(merged_tags))
+                source_type_for_map = pending.source_type
             await map_manager.add_observation(
                 chat_id=chat.id,
                 source_id=f"loc-{msg.message_id}",
@@ -185,6 +239,7 @@ def create_group_handlers(
                 observed_at=msg.date,
                 unit=unit_for_map,
                 observer=observer_for_map,
+                source_type=source_type_for_map,
                 confidence=confidence,
                 accuracy_m=accuracy_val,
                 tags=tags,
@@ -306,6 +361,10 @@ def create_group_handlers(
         MessageHandler(
             filters.ChatType.GROUPS & filters.TEXT & ~filters.COMMAND,
             on_group_text,
+        ),
+        MessageHandler(
+            filters.ChatType.GROUPS & filters.VOICE,
+            on_group_voice,
         ),
         MessageHandler(
             filters.ChatType.GROUPS & filters.LOCATION,
