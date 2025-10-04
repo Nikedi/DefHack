@@ -190,12 +190,12 @@ def _save_backlog(path: Path, backlog: Sequence[dict[str, object]]) -> None:
 def _canonicalise_payload(raw: dict[str, Any], *, unit_override: Optional[str] = None) -> dict[str, object]:
 	timestamp = _format_timestamp(raw.get("time"))
 	mgrs_value = raw.get("mgrs")
-	unit_value = unit_override if unit_override is not None else raw.get("unit")
+	unit_value = unit_override if unit_override is not None else raw.get("2. PSTOS")
 	sensor_id_value = raw.get("sensor_id")
 	observer_signature = raw.get("observer_signature")
 	structured: dict[str, object] = {
 		"time": timestamp,
-		"mgrs": _format_mgrs(mgrs_value if isinstance(mgrs_value, str) else (str(mgrs_value) if mgrs_value is not None else None)),
+		"mgrs": _format_mgrs(mgrs_value if isinstance(mgrs_value, str) else (str(mgrs_value) if mgrs_value is not None else "None")),
 		"what": "TACTICAL"+_normalise_what(str(raw.get("what") or "")),
 		"confidence": int(raw.get("confidence", 0)),
 		"sensor_id": str(sensor_id_value) if sensor_id_value else "UNSENT",
