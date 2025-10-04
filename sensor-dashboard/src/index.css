@@ -1,6 +1,22 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* Keep base minimal; rely on military.css for themed styling */
+html, body, #root {
+  height:100%;
+  margin:0;
+  font-family: 'Share Tech Mono', ui-monospace, monospace;
+  background:#0f140f;
+  color: var(--mil-sand, #cbb890);
+}
+
+/* Optional slim scroll */
+::-webkit-scrollbar { width:10px; }
+::-webkit-scrollbar-track { background:#121812; }
+::-webkit-scrollbar-thumb { background:#263026; border-radius:6px; }
+::-webkit-scrollbar-thumb:hover { background:#344034; }
+
 :root {
   font-family: system-ui, Avenir, Helvetica, Arial, sans-serif;
   line-height: 1.5;

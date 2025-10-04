@@ -42,12 +42,12 @@ export default function Reports() {
             <option key={r.type} value={r.type}>{r.label}</option>
           ))}
         </select>
-        <input className="border p-2" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="query" />
-        <button className="px-3 py-1 bg-blue-600 text-white rounded" onClick={generate} disabled={loading}>
+        <input className="p-2 border" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="query" />
+        <button className="px-3 py-1 text-white bg-blue-600 rounded" onClick={generate} disabled={loading}>
           {loading ? "Generating..." : "Generate"}
         </button>
       </div>
-      <textarea className="w-full h-64 border p-2" value={report} readOnly />
+      <textarea className="w-full h-64 p-2 border" value={report} readOnly />
       <div className="mt-2">
         <button className="btn btn-secondary" onClick={handleDownloadPDF} disabled={!report}>
           Download PDF
