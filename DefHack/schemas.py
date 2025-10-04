@@ -17,6 +17,7 @@ class SensorObservationIn(BaseModel):
     sensor_id: str | None = Field(None, description="ID of sensor/observer equipment or null for human observers")
     unit: str | None = Field(None, description="Observing unit (e.g., 'Alpha Company, 2nd Platoon')")
     observer_signature: str = Field(min_length=3, description="Observer identification (e.g., 'CallSign' or 'FirstnameLastname')")
+    original_message: str | None = Field(None, description="Original message text or null for sensor data without text")
 
     @field_validator('mgrs')
     @classmethod
@@ -38,6 +39,7 @@ class SensorObservation(BaseModel):
     sensor_id: str | None = Field(None, description="ID of sensor/observer equipment or null for human observers")
     unit: str | None = Field(None, description="Observing unit (e.g., 'Alpha Company, 2nd Platoon')")
     observer_signature: str = Field(min_length=3, description="Observer identification (e.g., 'CallSign' or 'FirstnameLastname')")
+    original_message: str | None = Field(None, description="Original message text or null for sensor data without text")
 
     @field_validator('mgrs')
     @classmethod

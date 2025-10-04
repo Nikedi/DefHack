@@ -25,7 +25,7 @@ except ImportError:
 @dataclass
 class ProcessedObservation:
     """Structured observation data after processing"""
-    original_message: str
+    original_message: str | None  # Can be null for non-text sensors like camera feeds
     formatted_data: Dict[str, Any]
     confidence_score: float
     processing_method: str  # "text_llm", "vision_model", "manual_format"

@@ -126,12 +126,13 @@ class DefHackTelegramBridge:
         else:
             observation_time = datetime.now(timezone.utc)
         
-        # Handle MGRS - use valid default if unknown or invalid format
+        # Handle MGRS - leave as null if no location provided
         if mgrs in ['UNKNOWN', 'Unknown location', 'N/A', ''] or mgrs is None:
-            mgrs = "35VLG8472571866"  # Valid default MGRS (Helsinki area)
+            mgrs = None  # Leave as null when no location provided
         elif mgrs and mgrs.startswith('LAT'):
-            # Convert LAT/LON format to valid MGRS
-            mgrs = "35VLG8472571866"  # Valid default MGRS (Helsinki area)
+            # Convert LAT/LON format to valid MGRS if needed
+            # For now, leave as null since we don't have proper conversion
+            mgrs = None
         
         # Extract unit from group name (first two words)
         unit_name = telegram_data.get('unit', 'Unknown Unit')
@@ -143,7 +144,7 @@ class DefHackTelegramBridge:
         
         observation = {
             'what': what,
-            'mgrs': mgrs,  # Always valid MGRS format
+            'mgrs': mgrs,  # Can be null if no location provided
             'confidence': confidence,
             'observer_signature': observer,  # Telegram username
             'time': observation_time.isoformat(),  # Convert datetime to ISO string

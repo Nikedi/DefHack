@@ -190,7 +190,8 @@ class LeaderNotificationSystem:
                 # Send clean human-readable version without JSON formatting
                 clean_msg = f"📋 <b>HUMAN READABLE - Entry {observation_id}:</b>\n\n"
                 clean_msg += f"<b>What was seen:</b> {raw_db_data.get('what', 'Unknown')}\n"
-                clean_msg += f"<b>Location:</b> {raw_db_data.get('mgrs', 'Unknown')}\n"
+                mgrs_value = raw_db_data.get('mgrs')
+                clean_msg += f"<b>Location:</b> {mgrs_value if mgrs_value is not None else 'No location provided'}\n"
                 clean_msg += f"<b>Observer:</b> {raw_db_data.get('observer_signature', 'Unknown')}\n"
                 clean_msg += f"<b>Time:</b> {raw_db_data.get('time', 'Unknown')}\n"
                 clean_msg += f"<b>Unit:</b> {raw_db_data.get('unit', 'Unknown')}\n"
@@ -199,7 +200,8 @@ class LeaderNotificationSystem:
                 if raw_db_data.get('amount'):
                     clean_msg += f"<b>Quantity:</b> {raw_db_data.get('amount')}\n"
                 clean_msg += f"<b>Processing:</b> {raw_db_data.get('processing_method', 'Unknown')}\n"
-                clean_msg += f"<b>Original Message:</b> {raw_db_data.get('original_message', 'Unknown')}"
+                original_msg = raw_db_data.get('original_message')
+                clean_msg += f"<b>Original Message:</b> {original_msg if original_msg is not None else 'N/A (sensor data)'}"
                 
                 await self.bot.send_message(
                     chat_id=leader_user_id,
@@ -241,7 +243,7 @@ class LeaderNotificationSystem:
         message += f"<b>Confidence:</b> {observation.formatted_data.get('confidence', 50)}%\n"
         message += f"<b>Processing:</b> {observation.processing_method.replace('_', ' ').title()}\n\n"
         
-        if observation.original_message != observation.formatted_data.get('what', ''):
+        if observation.original_message and observation.original_message != observation.formatted_data.get('what', ''):
             message += f"<b>Original Report:</b> {observation.original_message[:200]}{'...' if len(observation.original_message) > 200 else ''}\n\n"
         
         if observation_id:
