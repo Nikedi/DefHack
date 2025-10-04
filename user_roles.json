@@ -14,13 +14,13 @@
   "887241145": {
     "user_id": 887241145,
     "username": "nikokataja",
-    "full_name": "Niko Kataja",
+    "full_name": "nikokataja",
     "role": "platoon_leader",
-    "unit": "1st batallion, alpha company, 3rd platoon",
+    "unit": "Alpha Company",
     "rank": null,
     "callsign": null,
     "registered_at": "2025-10-04T08:15:45.023010+00:00",
-    "last_active": "2025-10-04T14:46:47.081629+00:00",
+    "last_active": "2025-10-04T15:31:51.608812+00:00",
     "phone_number": null
   },
   "12345": {
@@ -129,6 +129,18 @@
     "callsign": null,
     "registered_at": "2025-10-04T12:01:43.605932+00:00",
     "last_active": "2025-10-04T14:51:36.268504+00:00",
+    "phone_number": null
+  },
+  "5268524790": {
+    "user_id": 5268524790,
+    "username": "Markus_Maattanen",
+    "full_name": "Markus_Maattanen",
+    "role": "soldier",
+    "unit": "Charlie Company",
+    "rank": null,
+    "callsign": null,
+    "registered_at": "2025-10-04T15:35:02.427922+00:00",
+    "last_active": "2025-10-04T15:35:02.427922+00:00",
     "phone_number": null
   }
 }

@@ -1,5 +1,7 @@
 from openai import OpenAI
-client = OpenAI()
+from .config import settings
+
+client = OpenAI(api_key=settings.OPENAI_API_KEY)
 
 SYSTEM = """You are a staff officer. Draft clear, concise military orders or reports.
 - Only use the provided CONTEXT (sensor reports + intel document chunks).

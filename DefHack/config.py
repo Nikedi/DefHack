@@ -10,6 +10,7 @@ class Settings(BaseSettings):
     EMBED_MODEL: str = "text-embedding-3-large"
     EMBED_DIM: int = 3072
     API_WRITE_KEY: str = "change-me"
+    TELEGRAM_BOT_TOKEN: str | None = None
 
     class Config:
         env_file = ".env"

@@ -1,7 +1,7 @@
 from openai import OpenAI
 from .config import settings
 
-client = OpenAI()  # uses OPENAI_API_KEY from env
+client = OpenAI(api_key=settings.OPENAI_API_KEY)
 
 async def embed_texts(texts: list[str]) -> list[list[float]]:
     # Batch embeddings (sync SDK; acceptable for service worker)

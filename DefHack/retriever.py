@@ -2,7 +2,7 @@ from openai import OpenAI
 from sqlalchemy import text as sql
 from .config import settings
 
-client = OpenAI()
+client = OpenAI(api_key=settings.OPENAI_API_KEY)
 
 async def hybrid_search(db, query: str, k: int = 8):
     # Full-text search using PostgreSQL's built-in text search vectors
