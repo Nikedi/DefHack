@@ -17,7 +17,7 @@ from telegram.ext import (
 from .config import TELEGRAM_BOT_TOKEN, configure_logging
 from .handlers import create_direct_handlers, create_group_handlers
 from .observation_repository import ObservationRepository
-from .services import FragoGenerator, MapManager
+from .services import FragoGenerator, MapManager, SpeechTranscriber
 from .services.openai_analyzer import OpenAIAnalyzer
 
 
@@ -44,6 +44,7 @@ def build_app(token: Optional[str] = None) -> Application:
     analyzer = OpenAIAnalyzer(logger)
     analyzer.set_application(app)
     map_manager = MapManager(logger)
+    transcriber = SpeechTranscriber(logger)
 
     observation_repo = ObservationRepository()
     frago_generator = FragoGenerator(observation_repo)
@@ -51,6 +52,7 @@ def build_app(token: Optional[str] = None) -> Application:
     for handler in create_group_handlers(
         analyzer,
         logger,
+        transcriber,
         map_manager=map_manager,
     ):
         app.add_handler(handler)
