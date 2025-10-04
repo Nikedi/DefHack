@@ -13,7 +13,10 @@ import io
 
 from .services.openai_analyzer import OpenAIAnalyzer
 from .user_roles import user_manager, UserRole
-from .defhack_bridge import DefHackTelegramBridge
+try:
+    from .defhack_bridge import DefHackTelegramBridge
+except ImportError:
+    DefHackTelegramBridge = None
 
 try:
     import openai
@@ -35,6 +38,7 @@ class ProcessedObservation:
     mgrs: str
     timestamp: datetime
     requires_leader_notification: bool = True
+    message_type: str = "TACTICAL"  # BANTER, LOGISTICS, SUPPORT, or TACTICAL
     threat_level: str = "UNKNOWN"
 
 class EnhancedMessageProcessor:
@@ -43,7 +47,15 @@ class EnhancedMessageProcessor:
     def __init__(self, logger: logging.Logger):
         self.logger = logger
         self.openai_client = None  # Initialize lazily
-        self.defhack_bridge = DefHackTelegramBridge()
+        # Initialize DefHack bridge if available
+        if DefHackTelegramBridge:
+            try:
+                self.defhack_bridge = DefHackTelegramBridge()
+            except Exception as e:
+                self.logger.warning(f"DefHack bridge initialization failed: {e}")
+                self.defhack_bridge = None
+        else:
+            self.defhack_bridge = None
         
     def _get_openai_client(self):
         """Get OpenAI client, initializing lazily if needed"""
@@ -257,6 +269,12 @@ class EnhancedMessageProcessor:
             # Assess threat level
             threat_level = self._assess_threat_level(formatted_text)
             
+            # Get message type from extracted data
+            message_type = formatted_data.get('message_type', 'TACTICAL')
+            
+            # Set leader notification requirement based on message type
+            requires_notification = message_type == 'TACTICAL'
+            
             observation = ProcessedObservation(
                 original_message=message.text,
                 formatted_data=formatted_data,
@@ -267,8 +285,9 @@ class EnhancedMessageProcessor:
                 unit=getattr(self, 'current_context', {}).get('unit_from_chat', user_profile.unit),
                 mgrs=self._extract_mgrs_from_message(message),
                 timestamp=message.date.astimezone(timezone.utc),
-                requires_leader_notification=True,
-                threat_level=threat_level
+                requires_leader_notification=requires_notification,
+                threat_level=threat_level,
+                message_type=message_type
             )
             
             self.logger.info(f"Processed unformatted text from {user_profile.username} with LLM")
@@ -347,35 +366,45 @@ Focus on:
 """
     
     def _build_text_analysis_prompt(self, text: str, user_profile) -> str:
-        """Build prompt for text analysis and formatting"""
+        """Build prompt for text analysis, formatting, and classification"""
         return f"""
-Convert this informal tactical report into structured military observation format:
+Analyze this message from a military context and provide both classification and structured observation format if relevant:
 
-Original Report: "{text}"
+Original Message: "{text}"
 
 Observer: {user_profile.full_name} ({user_profile.rank or 'Unknown rank'})
 Unit: {user_profile.unit}
 Time: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}
 
-Format your response as:
+FIRST, classify this message into ONE of these categories:
+- BANTER: Casual conversation, jokes, personal chatter, social media style content, complaints about personal comfort
+- LOGISTICS: Supply requests, equipment needs, fuel, ammunition, food, water, medical supplies, transport
+- SUPPORT: Maintenance issues, repairs, broken equipment, medical assistance, facilities problems
+- TACTICAL: Enemy activity, threats, movements, intelligence, operational updates
 
-WHAT: [Clear description using military terminology]
-WHERE: [MGRS coordinates if mentioned, or location description]
-WHEN: [Time of observation]
-AMOUNT: [Quantity of personnel/equipment if specified]
-CONFIDENCE: [Confidence level 1-100 based on report clarity]
-THREAT LEVEL: [LOW/MEDIUM/HIGH/CRITICAL based on content]
-FORMATTED OBSERVATION: [Professional military observation statement]
+Then, if the message is TACTICAL, LOGISTICS, or SUPPORT (not BANTER), format as:
 
-Extract and standardize:
+MESSAGE_TYPE: [BANTER/LOGISTICS/SUPPORT/TACTICAL]
+WHAT: [Clear description using military terminology - omit if BANTER]
+WHERE: [MGRS coordinates if mentioned, or location description - omit if BANTER]
+WHEN: [Time of observation - omit if BANTER]
+AMOUNT: [Quantity of personnel/equipment if specified - omit if BANTER]
+CONFIDENCE: [Confidence level 1-100 based on report clarity - omit if BANTER]
+THREAT LEVEL: [LOW/MEDIUM/HIGH/CRITICAL based on content - omit if BANTER]
+FORMATTED OBSERVATION: [Professional military observation statement - omit if BANTER]
+
+For BANTER messages, only provide: MESSAGE_TYPE: BANTER
+
+Extract and standardize for non-BANTER messages:
 - Military unit designations (BTG, squad, platoon, etc.)
 - Weapon systems using NATO designations
 - Tactical movements and positions
-- Threat assessments and recommendations
+- Supply and logistics terminology
+- Maintenance and support requirements
 """
     
     async def _extract_structured_data_from_text(self, text: str, user_profile, message) -> Dict[str, Any]:
-        """Extract structured data from processed text"""
+        """Extract structured data from processed text including message classification"""
         # Parse the formatted text response into structured data
         lines = text.split('\n')
         data = {
@@ -386,12 +415,16 @@ Extract and standardize:
             'observer_signature': user_profile.username,
             'unit': user_profile.unit,
             'time': message.date.astimezone(timezone.utc).isoformat(),
-            'sensor_id': None
+            'sensor_id': None,
+            'message_type': 'TACTICAL'  # Default to tactical
         }
         
         for line in lines:
             line = line.strip()
-            if line.startswith('WHAT:'):
+            if line.startswith('MESSAGE_TYPE:'):
+                msg_type = line[13:].strip().upper()
+                data['message_type'] = msg_type
+            elif line.startswith('WHAT:'):
                 data['what'] = line[5:].strip()
             elif line.startswith('WHERE:') and 'mgrs' not in data:
                 location = line[6:].strip()

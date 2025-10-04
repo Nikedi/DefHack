@@ -135,11 +135,21 @@ class LeaderNotificationSystem:
     
     def _get_leaders_to_notify(self, observation: 'ProcessedObservation') -> List:
         """Get list of leaders who should be notified about this observation"""
-        # Get leaders for the observer's unit
-        unit_leaders = self.user_manager.get_leaders_for_unit(observation.unit)
+        # Route based on message type
+        message_type = getattr(observation, 'message_type', 'TACTICAL').upper()
         
-        # For high-priority observations, also notify higher echelon
-        if observation.threat_level in ['HIGH', 'CRITICAL']:
+        if message_type == 'TACTICAL':
+            # TACTICAL observations go to Platoon Leaders
+            unit_leaders = self.user_manager.get_tactical_leaders_for_unit(observation.unit)
+        elif message_type in ['LOGISTICS', 'SUPPORT']:
+            # LOGISTICS and SUPPORT observations go to Platoon 2ICs
+            unit_leaders = self.user_manager.get_logistics_support_leaders_for_unit(observation.unit)
+        else:
+            # Fallback to all leaders for unknown types
+            unit_leaders = self.user_manager.get_leaders_for_unit(observation.unit)
+        
+        # For high-priority tactical observations, also notify higher echelon
+        if message_type == 'TACTICAL' and observation.threat_level in ['HIGH', 'CRITICAL']:
             higher_echelon = self.user_manager.get_higher_echelon_users()
             unit_leaders.extend(higher_echelon)
         

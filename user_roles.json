@@ -2,13 +2,13 @@
   "6052123817": {
     "user_id": 6052123817,
     "username": "aarnikonola",
-    "full_name": "Aarni Konola",
+    "full_name": "aarnikonola",
     "role": "platoon_leader",
     "unit": "2. PSTOS",
     "rank": null,
     "callsign": null,
     "registered_at": "2025-10-04T08:11:01.198936+00:00",
-    "last_active": "2025-10-04T11:09:05.380646+00:00",
+    "last_active": "2025-10-04T12:02:41.518057+00:00",
     "phone_number": null
   },
   "887241145": {
@@ -20,7 +20,115 @@
     "rank": null,
     "callsign": null,
     "registered_at": "2025-10-04T08:15:45.023010+00:00",
-    "last_active": "2025-10-04T10:03:36.800474+00:00",
+    "last_active": "2025-10-04T12:15:48.245646+00:00",
+    "phone_number": null
+  },
+  "12345": {
+    "user_id": 12345,
+    "username": "test_user",
+    "full_name": "Observer",
+    "role": "soldier",
+    "unit": "Test Unit",
+    "rank": null,
+    "callsign": null,
+    "registered_at": "2025-10-04T11:32:47.917442+00:00",
+    "last_active": "2025-10-04T11:33:31.250874+00:00",
+    "phone_number": null
+  },
+  "10001": {
+    "user_id": 10001,
+    "username": "platoon_leader",
+    "full_name": "John Smith",
+    "role": "platoon_leader",
+    "unit": "Alpha Platoon",
+    "rank": null,
+    "callsign": null,
+    "registered_at": "2025-10-04T11:38:40.435985+00:00",
+    "last_active": "2025-10-04T11:41:48.815580+00:00",
+    "phone_number": null
+  },
+  "10002": {
+    "user_id": 10002,
+    "username": "platoon_2ic",
+    "full_name": "Jane Doe",
+    "role": "platoon_2ic",
+    "unit": "Alpha Platoon",
+    "rank": null,
+    "callsign": null,
+    "registered_at": "2025-10-04T11:38:40.436901+00:00",
+    "last_active": "2025-10-04T11:41:48.817292+00:00",
+    "phone_number": null
+  },
+  "10003": {
+    "user_id": 10003,
+    "username": "observer",
+    "full_name": "Mike Observer",
+    "role": "soldier",
+    "unit": "Alpha Platoon",
+    "rank": null,
+    "callsign": null,
+    "registered_at": "2025-10-04T11:38:40.437570+00:00",
+    "last_active": "2025-10-04T11:41:58.053228+00:00",
+    "phone_number": null
+  },
+  "20001": {
+    "user_id": 20001,
+    "username": "platoon_leader",
+    "full_name": "John Smith",
+    "role": "platoon_leader",
+    "unit": "Alpha Platoon",
+    "rank": null,
+    "callsign": null,
+    "registered_at": "2025-10-04T11:42:42.311526+00:00",
+    "last_active": "2025-10-04T11:45:02.623565+00:00",
+    "phone_number": null
+  },
+  "20002": {
+    "user_id": 20002,
+    "username": "platoon_2ic",
+    "full_name": "Jane Doe",
+    "role": "platoon_2ic",
+    "unit": "Alpha Platoon",
+    "rank": null,
+    "callsign": null,
+    "registered_at": "2025-10-04T11:42:42.313131+00:00",
+    "last_active": "2025-10-04T11:45:02.624976+00:00",
+    "phone_number": null
+  },
+  "20003": {
+    "user_id": 20003,
+    "username": "observer1",
+    "full_name": "Mike Observer",
+    "role": "soldier",
+    "unit": "Alpha Platoon",
+    "rank": null,
+    "callsign": null,
+    "registered_at": "2025-10-04T11:43:14.489360+00:00",
+    "last_active": "2025-10-04T11:45:02.625776+00:00",
+    "phone_number": null
+  },
+  "20004": {
+    "user_id": 20004,
+    "username": "observer2",
+    "full_name": "Sarah Observer",
+    "role": "soldier",
+    "unit": "Alpha Platoon",
+    "rank": null,
+    "callsign": null,
+    "registered_at": "2025-10-04T11:43:14.489933+00:00",
+    "last_active": "2025-10-04T11:45:02.626388+00:00",
+    "phone_number": null
+  },
+  "6320750004": {
+    "user_id": 6320750004,
+    "username": "laurimakinen",
+    "full_name": "laurimakinen",
+    "role": "platoon_2ic",
+    "unit": "2. PSTOS",
+    "rank": null,
+    "callsign": null,
+    "registered_at": "2025-10-04T12:01:43.605932+00:00",
+    "last_active": "2025-10-04T12:06:14.165201+00:00",
     "phone_number": null
   }
 }

@@ -15,6 +15,7 @@ class UserRole(Enum):
     """User roles in the military hierarchy"""
     SOLDIER = "soldier"
     PLATOON_LEADER = "platoon_leader"
+    PLATOON_2IC = "platoon_2ic"  # Platoon Second in Command
     COMPANY_COMMANDER = "company_commander"
     BATTALION_STAFF = "battalion_staff"
     HIGHER_ECHELON = "higher_echelon"
@@ -161,6 +162,10 @@ class UserRoleManager:
         """Get all platoon leaders"""
         return self.get_users_by_role(UserRole.PLATOON_LEADER)
     
+    def get_platoon_2ics(self) -> List[UserProfile]:
+        """Get all platoon 2ICs (Second in Command)"""
+        return self.get_users_by_role(UserRole.PLATOON_2IC)
+    
     def get_higher_echelon_users(self) -> List[UserProfile]:
         """Get all higher echelon users (company commander and above)"""
         higher_roles = [
@@ -174,6 +179,7 @@ class UserRoleManager:
         """Get leaders (platoon leader and above) for a specific unit"""
         leader_roles = [
             UserRole.PLATOON_LEADER,
+            UserRole.PLATOON_2IC,
             UserRole.COMPANY_COMMANDER,
             UserRole.BATTALION_STAFF,
             UserRole.HIGHER_ECHELON
@@ -191,12 +197,29 @@ class UserRoleManager:
         
         leader_roles = [
             UserRole.PLATOON_LEADER,
+            UserRole.PLATOON_2IC,
             UserRole.COMPANY_COMMANDER,
             UserRole.BATTALION_STAFF,
             UserRole.HIGHER_ECHELON,
             UserRole.ADMIN
         ]
         return user.role in leader_roles
+    
+    def get_tactical_leaders_for_unit(self, unit: str) -> List[UserProfile]:
+        """Get leaders who should receive tactical observations (Platoon Leaders) for a specific unit"""
+        tactical_leader_roles = [UserRole.PLATOON_LEADER]
+        return [
+            profile for profile in self.users.values() 
+            if profile.role in tactical_leader_roles and profile.unit == unit
+        ]
+    
+    def get_logistics_support_leaders_for_unit(self, unit: str) -> List[UserProfile]:
+        """Get leaders who should receive logistics/support observations (Platoon 2ICs) for a specific unit"""
+        logistics_support_roles = [UserRole.PLATOON_2IC]
+        return [
+            profile for profile in self.users.values() 
+            if profile.role in logistics_support_roles and profile.unit == unit
+        ]
     
     def is_higher_echelon(self, user_id: int) -> bool:
         """Check if user is higher echelon (company commander and above)"""

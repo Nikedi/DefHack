@@ -1,38 +1,6 @@
 """
 Complete DefHack Telegram Bot Integration System
-Integrates all components into a working military intellig                if observation:
-                    # Update location if we have it from the cluster
-                    if cluster['has_location'] and cluster['location']:
-                        observation.mgrs = cluster['location']
-                    
-                    # Classify the message type and handle accordingly
-                    message_type = self._classify_message_type(combined_message)
-                    
-                    if message_type == "logistics":
-                        # Prefix logistics messages with LOGISTICS keyword
-                        observation.formatted_data['what'] = f"LOGISTICS: {observation.formatted_data.get('what', 'Unknown logistics requirement')}"
-                        self.logger.info(f"📦 Logistics observation created: {observation.formatted_data['what']}")
-                        
-                        # Store in database but don't notify leaders
-                        await self.leader_notifications._store_observation_in_database(observation)
-                        self.logger.info(f"✅ Logistics observation stored in database (no leader notification)")
-                        
-                    elif message_type == "support":
-                        # Prefix support messages with SUPPORT keyword
-                        observation.formatted_data['what'] = f"SUPPORT: {observation.formatted_data.get('what', 'Unknown support requirement')}"
-                        self.logger.info(f"🔧 Support observation created: {observation.formatted_data['what']}")
-                        
-                        # Store in database but don't notify leaders
-                        await self.leader_notifications._store_observation_in_database(observation)
-                        self.logger.info(f"✅ Support observation stored in database (no leader notification)")
-                        
-                    else:
-                        # Tactical observation - normal processing with leader notifications
-                        self.logger.info(f"⚡ Tactical observation created: threat_level={observation.threat_level}, messages={len(cluster['messages'])}")
-                        
-                        # Send to leader notification system
-                        await self.leader_notifications.process_new_observation(observation, chat_id)
-                        self.logger.info(f"✅ Leader notifications sent for tactical observation")m
+Integrates all components into a working military intelligence Telegram bot
 """
 
 import asyncio
@@ -47,65 +15,68 @@ from telegram.ext import (
     CallbackQueryHandler, ContextTypes, filters
 )
 
-# Import all our custom components
+from .enhanced_processor import EnhancedMessageProcessor
+from .leader_notifications import LeaderNotificationSystem
 from .user_roles import user_manager, UserRole
-from .enhanced_processor import EnhancedMessageProcessor, ProcessedObservation
-from .leader_notifications import initialize_leader_notifications
-from .higher_echelon_intelligence import initialize_higher_echelon_intelligence, SummaryType
-from .services.openai_analyzer import OpenAIAnalyzer
-from .defhack_bridge import DefHackTelegramBridge
 
-# MGRS conversion utility
-def lat_lon_to_mgrs(lat: float, lon: float) -> str:
-    """Convert latitude/longitude to MGRS format (simplified)"""
-    try:
-        # This is a simplified conversion - in production use proper MGRS library
-        import mgrs
-        m = mgrs.MGRS()
-        return m.toMGRS(lat, lon)
-    except ImportError:
-        # Fallback - use valid default MGRS coordinate (Helsinki area)
-        return "35VLG8472571866"
-    except Exception:
-        # Fallback - use valid default MGRS coordinate (Helsinki area)
-        return "35VLG8472571866"
+# Configure logging
+logging.basicConfig(
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    level=logging.INFO
+)
 
-class DefHackTelegramSystem:
-    """Complete integrated DefHack Telegram bot system"""
+class DefHackIntegratedSystem:
+    """Main system integrating all DefHack components"""
     
-    def __init__(self, token: str, logger: logging.Logger):
+    def __init__(self, token: str):
         self.token = token
-        self.logger = logger
+        self.app = None
+        self.logger = logging.getLogger(__name__)
+        self.message_processor = EnhancedMessageProcessor(self.logger)
+        self.leader_notifications = None  # Will be initialized after app is created
         
-        # Initialize core components
-        self.app = ApplicationBuilder().token(token).build()
-        self.message_processor = EnhancedMessageProcessor(logger)
-        self.defhack_bridge = DefHackTelegramBridge()
+        # Message clustering for combining multiple messages
+        self.message_clusters: Dict[str, Dict] = {}
+        self.cluster_timeouts: Dict[str, asyncio.Task] = {}
         
-        # Initialize OpenAI client and set it in the processor
-        self._init_openai_client()
+        # Bot initialization flag
+        self.initialized = False
         
-        # Initialize subsystems
-        self.leader_notifications = initialize_leader_notifications(self.app, logger)
-        self.higher_echelon_intel = initialize_higher_echelon_intelligence(logger)
-        
-        # Track active registrations
-        self.active_registrations: Dict[int, Dict] = {}
-        
-        # Pending observations waiting for additional messages (10 second timeout)
-        self.pending_observations: Dict[str, Dict[str, Any]] = {}  # Key: f"{chat_id}_{user_id}"
-        # Track message clusters - combines multiple messages from same user within 10 seconds
-        self.message_clusters: Dict[str, Dict[str, Any]] = {}  # Key: f"{chat_id}_{user_id}"
-        
-        # Setup handlers
-        self._setup_handlers()
+        self.logger.info("🚀 DefHack Integrated System initialized")
     
-    async def _process_message_cluster_timeout(self, cluster_key: str):
-        """Handle timeout for message clustering - process combined messages after 10 seconds"""
-        await asyncio.sleep(10)  # Wait 10 seconds for additional messages
+    async def initialize(self):
+        """Initialize the bot application and all components"""
+        if self.initialized:
+            return
+            
+        try:
+            # Build the application
+            self.app = ApplicationBuilder().token(self.token).build()
+            
+            # Initialize leader notifications system
+            self.leader_notifications = LeaderNotificationSystem(self.app, self.logger)
+            
+            # Setup handlers
+            self._setup_handlers()
+            
+            # Initialize OpenAI client if available
+            await self._initialize_openai()
+            
+            self.initialized = True
+            self.logger.info("✅ DefHack system fully initialized")
+            
+        except Exception as e:
+            self.logger.error(f"❌ Failed to initialize DefHack system: {e}")
+            raise
+    
+    async def _process_clustered_messages(self, cluster_key: str):
+        """Process a cluster of messages after timeout"""
+        if cluster_key not in self.message_clusters:
+            return
+            
+        cluster = self.message_clusters[cluster_key]
         
-        if cluster_key in self.message_clusters:
-            cluster = self.message_clusters.pop(cluster_key)
+        try:
             self.logger.info(f"⏱️ Message cluster timeout for {cluster_key}, processing {len(cluster['messages'])} messages")
             
             # Combine all messages in the cluster
@@ -128,9 +99,9 @@ class DefHackTelegramSystem:
                 # Add location if available
                 mock_location = None
                 if cluster['has_location'] and cluster['location']:
-                    # Create mock location object
                     class MockLocation:
-                        def __init__(self, mgrs_str):
+                        def __init__(self, mgrs_coords):
+                            self.mgrs_coords = mgrs_coords
                             # Extract lat/lon from MGRS if possible, otherwise use defaults
                             self.latitude = 60.1681  # Helsinki area default
                             self.longitude = 24.9219
@@ -148,23 +119,67 @@ class DefHackTelegramSystem:
                     if cluster['has_location'] and cluster['location']:
                         observation.mgrs = cluster['location']
                     
-                    self.logger.info(f"� Clustered observation created: threat_level={observation.threat_level}, messages={len(cluster['messages'])}")
+                    # Get message type from LLM classification (already done in enhanced_processor)
+                    message_type = getattr(observation, 'message_type', 'TACTICAL').lower()
+                    self.logger.info(f"🤖 LLM classified message as: {message_type.upper()} - '{combined_message[:100]}...'")
                     
-                    # Send to leader notification system
-                    await self.leader_notifications.process_new_observation(observation, chat_id)
-                    self.logger.info(f"✅ Leader notifications sent for clustered observation")
+                    # Handle BANTER messages by ignoring them completely
+                    if message_type == "banter":
+                        self.logger.info(f"� BANTER message ignored: '{combined_message[:50]}...'")
+                        return  # Exit early for banter
+                    
+                    elif message_type == "logistics":
+                        # Prefix logistics messages with LOGISTICS keyword (only if not already prefixed by LLM)
+                        if not observation.formatted_data.get('what', '').startswith('LOGISTICS:'):
+                            observation.formatted_data['what'] = f"LOGISTICS: {observation.formatted_data.get('what', 'Unknown logistics requirement')}"
+                        self.logger.info(f"📦 Logistics observation: {observation.formatted_data['what']}")
+                        
+                        # Send to Platoon 2IC via leader notification system
+                        if self.leader_notifications:
+                            await self.leader_notifications.process_new_observation(observation, chat_id)
+                            self.logger.info(f"✅ Logistics observation sent to Platoon 2IC")
+                        else:
+                            self.logger.warning(f"⚠️ Leader notification system not available, logistics observation not processed")
+                        
+                    elif message_type == "support":
+                        # Prefix support messages with SUPPORT keyword (only if not already prefixed by LLM)
+                        if not observation.formatted_data.get('what', '').startswith('SUPPORT:'):
+                            observation.formatted_data['what'] = f"SUPPORT: {observation.formatted_data.get('what', 'Unknown support requirement')}"
+                        self.logger.info(f"🔧 Support observation: {observation.formatted_data['what']}")
+                        
+                        # Send to Platoon 2IC via leader notification system
+                        if self.leader_notifications:
+                            await self.leader_notifications.process_new_observation(observation, chat_id)
+                            self.logger.info(f"✅ Support observation sent to Platoon 2IC")
+                        else:
+                            self.logger.warning(f"⚠️ Leader notification system not available, support observation not processed")
+                        
+                    else:
+                        # Tactical observation - normal processing with leader notifications
+                        self.logger.info(f"⚡ Tactical observation: threat_level={observation.threat_level}, messages={len(cluster['messages'])}")
+                        
+                        # Send to leader notification system
+                        if self.leader_notifications:
+                            await self.leader_notifications.process_new_observation(observation, chat_id)
+                            self.logger.info(f"✅ Leader notifications sent for tactical observation")
+                        else:
+                            self.logger.warning(f"⚠️ Leader notification system not available, tactical observation not processed")
                 else:
                     self.logger.warning(f"❌ No observation created from clustered messages")
                     
             except Exception as e:
-                self.logger.error(f"Error processing message cluster: {e}")
-                import traceback
-                self.logger.error(traceback.format_exc())
+                self.logger.error(f"❌ Error processing clustered messages: {e}")
+                
+        finally:
+            # Clean up cluster data
+            if cluster_key in self.message_clusters:
+                del self.message_clusters[cluster_key]
+            if cluster_key in self.cluster_timeouts:
+                del self.cluster_timeouts[cluster_key]
     
-    def _init_openai_client(self):
-        """Initialize OpenAI client and set it in the message processor"""
+    async def _initialize_openai(self):
+        """Initialize OpenAI client for enhanced processing"""
         try:
-            import os
             try:
                 import openai
             except ImportError:
@@ -187,680 +202,349 @@ class DefHackTelegramSystem:
         self.app.add_handler(CommandHandler("start", self._handle_start))
         self.app.add_handler(CommandHandler("register", self._handle_register))
         self.app.add_handler(CommandHandler("help", self._handle_help))
-        self.app.add_handler(CommandHandler("status", self._handle_status))
-        self.app.add_handler(CommandHandler("frago", self._handle_frago_command))
-        self.app.add_handler(CommandHandler("intrep", self._handle_intrep_command))
-        self.app.add_handler(CommandHandler("threat", self._handle_threat_assessment))
-        self.app.add_handler(CommandHandler("activity", self._handle_activity_summary))
-        self.app.add_handler(CommandHandler("profile", self._handle_profile))
         
-        # Message handlers for different chat types
-        self.app.add_handler(MessageHandler(
-            filters.ChatType.GROUPS & (filters.TEXT | filters.PHOTO | filters.LOCATION),
-            self._handle_group_message
-        ))
+        # Message handlers
+        self.app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self._handle_message))
+        self.app.add_handler(MessageHandler(filters.LOCATION, self._handle_location))
+        self.app.add_handler(MessageHandler(filters.PHOTO, self._handle_photo))
         
-        self.app.add_handler(MessageHandler(
-            filters.ChatType.PRIVATE & (filters.TEXT | filters.PHOTO | filters.LOCATION),
-            self._handle_private_message
-        ))
-        
-        # Callback query handler for inline keyboards
+        # Callback query handler for button interactions
         self.app.add_handler(CallbackQueryHandler(self._handle_callback_query))
         
-        self.logger.info("All handlers registered successfully")
+        self.logger.info("✅ All handlers setup complete")
     
-    def _is_relevant_message(self, message_text: str) -> bool:
-        """Check if a message is relevant for tactical intelligence processing"""
-        if not message_text:
-            return False
+    async def _handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle text messages with enhanced processing and clustering"""
+        try:
+            user_id = update.effective_user.id
+            chat_id = update.effective_chat.id
+            username = update.effective_user.username or "Unknown"
+            message_text = update.message.text
             
-        message_lower = message_text.lower()
-        
-        # Skip common irrelevant patterns (personal/casual messages)
-        irrelevant_patterns = [
-            # Social/casual conversation
-            'hei', 'moi', 'kiitos', 'thanks', 'lol', 'haha', 'ok', 'okei',
-            # Personal expressions/complaints
-            'want home', 'haluan kotii', 'miss home', 'ikävä kotia',
-            'bored', 'tylsää', 'tired', 'väsynyt', 'homesick', 'koti-ikävä',
-            # Jokes/random expressions
-            'just kidding', 'vitsi', 'haha', 'lmao', 'rofl'
-        ]
-        
-        # Check for irrelevant patterns
-        for pattern in irrelevant_patterns:
-            if pattern in message_lower:
-                return False
-        
-        # Skip very short messages (less than 3 characters)
-        if len(message_text.strip()) <= 2:
-            return False
-        
-        # Always process if contains tactical keywords
-        tactical_keywords = [
-            # Military equipment
-            'bmp', 'tank', 'panzer', 'vaunu', 'helikopteri', 'helicopter', 'drone', 'drooni',
-            # Military positions/movements  
-            'enemy', 'vih', 'vihollinen', 'patrol', 'partio', 'recon', 'tiedustelu',
-            # Locations/coordinates
-            'position', 'asema', 'location', 'sijainti', 'koordinaatti', 'mgrs',
-            # Tactical observations
-            'observed', 'havaittu', 'näky', 'spotted', 'contact', 'yhteys',
-            # Logistics (will be handled specially)
-            'food', 'ruoka', 'water', 'vesi', 'ammo', 'ammunition', 'ampumatar',
-            'toilet', 'wc', 'supplies', 'tarvike', 'fuel', 'polttoaine', 'medicine', 'lääke'
-        ]
-        
-        for keyword in tactical_keywords:
-            if keyword in message_lower:
-                return True
-        
-        # Process if contains numbers (likely quantities, coordinates, etc.)
-        import re
-        if re.search(r'\d', message_text):
-            return True
-            
-        # Process if longer than 10 characters (likely contains useful info)
-        if len(message_text.strip()) > 10:
-            return True
-            
-        return False
-    
-    def _classify_message_type(self, message_text: str) -> str:
-        """Classify message type for appropriate handling"""
-        if not message_text:
-            return "tactical"
-            
-        message_lower = message_text.lower()
-        
-        # Logistics keywords (supplies, fuel, ammo)
-        logistics_keywords = [
-            'food', 'ruoka', 'water', 'vesi', 'supplies', 'tarvike', 
-            'fuel', 'polttoaine', 'ammunition', 'ampumatar', 'ammo'
-        ]
-        
-        # Support keywords (maintenance, medical, facilities)
-        support_keywords = [
-            'toilet', 'wc', 'toiletpaper', 'vessapaperi', 'medicine', 'lääke', 'medical',
-            'maintenance', 'huolto', 'repair', 'korjaus', 'spare', 'varaosa',
-            'broken', 'rikki', 'fix', 'korjaa', 'help', 'apu'
-        ]
-        
-        for keyword in logistics_keywords:
-            if keyword in message_lower:
-                return "logistics"
+            # Check if user is providing a custom unit name during registration
+            if context.user_data.get('awaiting_unit'):
+                unit = message_text.strip()
+                role = context.user_data.get('selected_role', UserRole.SOLDIER)
+                role_display = context.user_data.get('selected_role_display', 'Soldier')
                 
-        for keyword in support_keywords:
-            if keyword in message_lower:
-                return "support"
-        
-        return "tactical"
+                # Complete registration with custom unit
+                user_manager.register_user(user_id, username, username, unit, role)
+                
+                # Clear user context
+                context.user_data.clear()
+                
+                await update.message.reply_text(
+                    f"🎉 Registration Complete!\n\n"
+                    f"👤 Role: {role_display}\n"
+                    f"📍 Unit: {unit}\n\n"
+                    f"You can now send observations and they will be routed to the appropriate leaders!"
+                )
+                return
+            
+            # Get user info
+            user = user_manager.get_user(user_id)
+            if not user:
+                await update.message.reply_text(
+                    "Please register first using /register command"
+                )
+                return
+            
+            # Only process group messages (filter out direct messages)
+            if update.effective_chat.type == 'private':
+                self.logger.info(f"🚫 Ignoring direct message from {username}: '{message_text}'")
+                return
+            
+            self.logger.info(f"📥 Message from {username} ({user.role}) in {update.effective_chat.title}: {message_text}")
+            
+            # Note: Message relevance filtering is now handled by LLM classification
+            # The LLM will classify messages as BANTER and we'll ignore those
+            
+            # Create cluster key for this user in this chat
+            cluster_key = f"{chat_id}_{user_id}"
+            current_time = datetime.now(timezone.utc)
+            
+            # Initialize or update cluster
+            if cluster_key not in self.message_clusters:
+                self.message_clusters[cluster_key] = {
+                    'messages': [],
+                    'timestamp': current_time,
+                    'chat_id': chat_id,
+                    'user_id': user_id,
+                    'username': username,
+                    'chat_title': update.effective_chat.title or "Unknown Chat",
+                    'has_location': False,
+                    'location': None
+                }
+                self.logger.info(f"🆕 New message cluster created for {cluster_key}")
+            
+            # Add message to cluster
+            self.message_clusters[cluster_key]['messages'].append(message_text)
+            self.logger.info(f"📦 Added message to cluster {cluster_key}: {len(self.message_clusters[cluster_key]['messages'])} total messages")
+            
+            # Cancel existing timeout for this cluster
+            if cluster_key in self.cluster_timeouts:
+                self.cluster_timeouts[cluster_key].cancel()
+            
+            # Set new 10-second timeout for location waiting
+            timeout_task = asyncio.create_task(
+                self._wait_and_process_cluster(cluster_key, 10.0)
+            )
+            self.cluster_timeouts[cluster_key] = timeout_task
+            
+            self.logger.info(f"⏰ Set 10s timeout for cluster {cluster_key} (waiting for potential location)")
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error handling message: {e}")
+            await update.message.reply_text("Error processing message")
+    
+    async def _wait_and_process_cluster(self, cluster_key: str, delay: float):
+        """Wait for the specified delay then process the message cluster"""
+        try:
+            await asyncio.sleep(delay)
+            await self._process_clustered_messages(cluster_key)
+        except asyncio.CancelledError:
+            # Task was cancelled, which is normal when new messages arrive
+            pass
+        except Exception as e:
+            self.logger.error(f"❌ Error in cluster timeout: {e}")
+    
+    # Note: Message relevance filtering is now handled by LLM classification in enhanced_processor.py
+    # The LLM intelligently detects banter, logistics, support, and tactical messages
+    
+    # Note: Message classification is now handled by LLM in enhanced_processor.py
+    # This provides more intelligent classification including banter detection
     
     async def _handle_start(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /start command"""
         user_id = update.effective_user.id
         user = user_manager.get_user(user_id)
         
-        if update.effective_chat.type == "private":
-            if user:
-                welcome_msg = f"""👋 **Welcome back, {user.full_name}!**
-
-🎖️ **Role:** {user.role.value.replace('_', ' ').title()}
-🏛️ **Unit:** {user.unit}
-📊 **Status:** Registered and Active
-
-**Available Commands:**
-• `/help` - Show all available commands
-• `/profile` - View your profile information
-• `/status` - Check system status
-
-**Intelligence Commands:**
-• `/intrep` - Request 24-hour intelligence report
-• `/threat` - Get current threat assessment
-• `/activity` - View activity summary
-
-Ready to serve! 🎯"""
-            else:
-                welcome_msg = """👋 **Welcome to DefHack Military Intelligence Bot!**
-
-⚡ **You are not yet registered**
-
-To use this system, you need to register with your military credentials.
-
-Use `/register` to begin the registration process.
-
-🎖️ **This bot provides:**
-• Real-time tactical intelligence
-• Automated FRAGO generation
-• Intelligence summaries for command staff
-• Secure military communications
-
-🔐 **For official use only**"""
+        if user:
+            welcome_text = f"Welcome back, {user.name}! You are registered as {user.role}."
         else:
-            # Group chat
-            welcome_msg = """👋 **DefHack Intelligence Bot Online**
-
-📡 **Monitoring Active** - This bot is now monitoring tactical communications in this group.
-
-**Automatic Features:**
-• Tactical message analysis
-• Threat detection and alerting
-• MGRS coordinate extraction
-• Leader notifications for significant events
-
-**Group Commands:**
-• Share locations for MGRS conversion
-• Report tactical observations
-• All messages analyzed for intelligence value
-
-🎯 **Ready for tactical operations!**"""
+            welcome_text = "Welcome to DefHack Intelligence System! Please register using /register command."
         
-        await update.message.reply_text(welcome_msg, parse_mode='Markdown')
+        await update.message.reply_text(welcome_text)
     
     async def _handle_register(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Handle user registration process"""
-        if update.effective_chat.type != "private":
-            await update.message.reply_text(
-                "🔐 **Registration must be done in private messages.**\n\n"
-                "Please send me a direct message to register."
-            )
-            return
-        
-        user_id = update.effective_user.id
-        
-        # Start registration process
-        self.active_registrations[user_id] = {
-            'step': 'role_selection',
-            'data': {
-                'user_id': user_id,
-                'username': update.effective_user.username or f"user_{user_id}",
-                'full_name': update.effective_user.full_name or "Unknown"
-            }
-        }
-        
-        # Show role selection keyboard
+        """Handle /register command"""
         keyboard = [
-            [
-                InlineKeyboardButton("🪖 Soldier", callback_data="role_soldier"),
-                InlineKeyboardButton("⭐ Platoon Leader", callback_data="role_platoon_leader")
-            ],
-            [
-                InlineKeyboardButton("🎖️ Company Commander", callback_data="role_company_commander"),
-                InlineKeyboardButton("🏛️ Battalion Staff", callback_data="role_battalion_staff")
-            ],
-            [
-                InlineKeyboardButton("🎯 Higher Echelon", callback_data="role_higher_echelon")
-            ]
+            [InlineKeyboardButton("🎖️ Platoon Leader", callback_data="register_platoon_leader")],
+            [InlineKeyboardButton("⚡ Platoon 2IC", callback_data="register_platoon_2ic")],
+            [InlineKeyboardButton("👥 Squad Leader", callback_data="register_squad_leader")],
+            [InlineKeyboardButton("🔍 Observer", callback_data="register_observer")]
         ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
         
         await update.message.reply_text(
-            "🎖️ **DefHack Registration**\n\n"
-            "Select your military role:",
-            reply_markup=InlineKeyboardMarkup(keyboard),
-            parse_mode='Markdown'
+            "Please select your role:",
+            reply_markup=reply_markup
         )
     
-    async def _handle_group_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Handle messages in group chats - main tactical processing with message clustering"""
-        user_id = update.effective_user.id
-        chat_id = update.effective_chat.id
-        username = update.effective_user.username or "Unknown"
-        chat_title = update.effective_chat.title or "Unknown Group"
-        cluster_key = f"{chat_id}_{user_id}"
-        
-        # Skip if not a group message (only process group messages)
-        if update.effective_chat.type == "private":
-            return
-        
-        # Skip processing if message is not relevant for tactical intelligence
-        if update.message.text and not self._is_relevant_message(update.message.text):
-            self.logger.info(f"📝 Skipping irrelevant message from {username}: {update.message.text[:50]}...")
-            return
-        
-        # Handle location messages - add to existing cluster or create new one
-        if update.message.location:
-            self.logger.info(f"📍 Location received from {username} in {chat_title}")
-            
-            # Check if there's an active message cluster for this user
-            if cluster_key in self.message_clusters:
-                # Add location to existing cluster
-                lat, lon = update.message.location.latitude, update.message.location.longitude
-                mgrs = lat_lon_to_mgrs(lat, lon)
-                
-                self.message_clusters[cluster_key]['location'] = mgrs
-                self.message_clusters[cluster_key]['has_location'] = True
-                self.logger.info(f"✅ Location added to message cluster: {mgrs}")
-                return
-            else:
-                # Standalone location - create minimal cluster
-                self.message_clusters[cluster_key] = {
-                    'messages': [f"[Location: {update.message.location.latitude}, {update.message.location.longitude}]"],
-                    'location': lat_lon_to_mgrs(update.message.location.latitude, update.message.location.longitude),
-                    'has_location': True,
-                    'timestamp': datetime.now(timezone.utc),
-                    'username': username,
-                    'chat_title': chat_title
-                }
-                
-                # Start cluster timeout
-                asyncio.create_task(self._process_message_cluster_timeout(cluster_key))
-                self.logger.info(f"📍 Created new cluster with standalone location")
-                return
-        
-        # Handle text messages - add to cluster or create new cluster
-        message_text = update.message.text if update.message.text else "[Non-text message]"
-        
-        self.logger.info(f"🔍 MAIN HANDLER: Processing group message from {username} ({user_id}) in {chat_title} ({chat_id})")
-        self.logger.info(f"💬 Message: {message_text}")
-        
-        # Check if user is registered
-        user = user_manager.get_user(user_id)
-        if not user:
-            self.logger.warning(f"❌ User {user_id} not registered, sending registration reminder")
-            # Send registration reminder (privately)
-            try:
-                await context.bot.send_message(
-                    chat_id=user_id,
-                    text="🔐 **Registration Required**\n\n"
-                         "You need to register before I can process your tactical reports.\n"
-                         "Send me `/register` in private message to begin."
-                )
-            except Exception as e:
-                self.logger.error(f"Failed to send registration reminder to {user_id}: {e}")
-            return
-        
-        self.logger.info(f"✅ User {user.username} ({user.role.value}) from unit '{user.unit}' is registered")
-        
-        # Handle message clustering - combine multiple messages within 10 seconds
-        try:
-            if cluster_key in self.message_clusters:
-                # Add to existing cluster
-                self.message_clusters[cluster_key]['messages'].append(message_text)
-                self.logger.info(f"📝 Added message to existing cluster (total: {len(self.message_clusters[cluster_key]['messages'])} messages)")
-            else:
-                # Create new message cluster
-                self.message_clusters[cluster_key] = {
-                    'messages': [message_text],
-                    'location': None,
-                    'has_location': False,
-                    'timestamp': datetime.now(timezone.utc),
-                    'username': username,
-                    'chat_title': chat_title,
-                    'user': user
-                }
-                
-                self.logger.info(f"📝 Created new message cluster for {username}")
-                
-                # Start cluster timeout (will process combined messages after 10 seconds)
-                asyncio.create_task(self._process_message_cluster_timeout(cluster_key))
-            
-        except Exception as e:
-            self.logger.error(f"Error processing group message: {e}")
-            import traceback
-            self.logger.error(traceback.format_exc())
-    
-    async def _handle_private_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Handle private messages - registration and commands"""
-        user_id = update.effective_user.id
-        
-        # Check if user is in registration process
-        if user_id in self.active_registrations:
-            await self._handle_registration_step(update, context)
-            return
-        
-        # Check if user is registered
-        user = user_manager.get_user(user_id)
-        if not user:
-            await update.message.reply_text(
-                "🔐 **Registration Required**\n\n"
-                "Please use `/register` to register before using the system."
-            )
-            return
-        
-        # Process as regular message (for individual reports)
-        await self._process_individual_report(update, context)
-    
-    async def _handle_registration_step(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Handle registration process steps"""
-        user_id = update.effective_user.id
-        registration = self.active_registrations[user_id]
-        
-        if registration['step'] == 'unit_input':
-            # User provided unit information
-            unit = update.message.text.strip()
-            registration['data']['unit'] = unit
-            
-            # Complete registration
-            profile = user_manager.register_user(
-                user_id=registration['data']['user_id'],
-                username=registration['data']['username'],
-                full_name=registration['data']['full_name'],
-                unit=unit,
-                role=registration['data']['role']
-            )
-            
-            # Remove from active registrations
-            del self.active_registrations[user_id]
-            
-            # Send confirmation
-            await update.message.reply_text(
-                f"✅ **Registration Complete!**\n\n"
-                f"👤 **Name:** {profile.full_name}\n"
-                f"🎖️ **Role:** {profile.role.value.replace('_', ' ').title()}\n"
-                f"🏛️ **Unit:** {profile.unit}\n\n"
-                f"🎯 **You're now ready to use the DefHack Intelligence System!**\n\n"
-                f"Use `/help` to see available commands.",
-                parse_mode='Markdown'
-            )
-    
-    async def _handle_callback_query(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Handle inline keyboard callbacks"""
-        query = update.callback_query
-        
-        user_id = query.from_user.id
-        
-        # Route observation action buttons to leader notification system
-        if query.data.startswith(("more_info_", "frago_", "frago_req_", "no_action_", "details_")):
-            if self.leader_notifications:
-                await self.leader_notifications.handle_frago_request(update, context)
-            else:
-                await query.answer("Service temporarily unavailable.")
-            return
-        
-        await query.answer()
-        
-        # Handle role selection during registration
-        if query.data.startswith("role_"):
-            if user_id in self.active_registrations:
-                role_name = query.data[5:]  # Remove "role_" prefix
-                role = getattr(UserRole, role_name.upper(), UserRole.SOLDIER)
-                
-                self.active_registrations[user_id]['data']['role'] = role
-                self.active_registrations[user_id]['step'] = 'unit_input'
-                
-                await query.edit_message_text(
-                    f"🎖️ **Role Selected:** {role.value.replace('_', ' ').title()}\n\n"
-                    f"📝 **Please enter your unit designation:**\n"
-                    f"(Example: 1st Battalion, Alpha Company, 2nd Platoon)",
-                    parse_mode='Markdown'
-                )
-            return
-        
-        # Handle FRAGO requests from leader notifications
-        if query.data.startswith("frago_req_") or query.data.startswith("no_action_") or query.data.startswith("details_"):
-            await self.leader_notifications.handle_frago_request(update, context)
-            return
-    
     async def _handle_help(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Show help information"""
-        user_id = update.effective_user.id
-        user = user_manager.get_user(user_id)
-        
-        if not user:
-            help_text = """❓ **DefHack Intelligence Bot Help**
+        """Handle /help command"""
+        help_text = """
+🎯 **DefHack Intelligence System**
 
-🔐 **You are not registered**
-Use `/register` to register first.
+**Commands:**
+/start - Start the bot
+/register - Register your role
+/help - Show this help
 
-**Basic Commands:**
-• `/start` - Start the bot
-• `/register` - Register with the system
-• `/help` - Show this help message
-"""
-        else:
-            help_text = f"""❓ **DefHack Intelligence Bot Help**
-👤 **User:** {user.full_name} ({user.role.value.replace('_', ' ').title()})
+**Message Types:**
+• **Tactical observations** - Enemy activity, threats, movements
+• **Logistics reports** - Supply status, equipment needs
+• **Support requests** - Maintenance, medical, facilities
 
-**📋 Basic Commands:**
-• `/start` - Welcome message and status
-• `/profile` - View your profile
-• `/status` - Check system status
-• `/help` - Show this help message
+**How it works:**
+1. Send observation messages in group chats
+2. Include location data when possible
+3. System will classify and route appropriately
+4. **TACTICAL** observations → Platoon Leader
+5. **LOGISTICS/SUPPORT** observations → Platoon 2IC
+6. **BANTER** messages → Ignored completely
 
-**🎖️ Intelligence Commands:**
-• `/intrep` - 24-hour intelligence report
-• `/threat` - Current threat assessment
-• `/activity` - Activity pattern summary
-
-**📡 Group Features:**
-• Share location → Automatic MGRS conversion
-• Send tactical reports → Automatic analysis
-• Photo analysis → Vision-based intelligence
-• Automatic leader notifications for threats
-
-**🔐 Permissions:**
-"""
-            
-            if user_manager.can_request_frago(user_id):
-                help_text += "• ✅ Can request FRAGO generation\n"
-            if user_manager.can_request_intelligence_summary(user_id):
-                help_text += "• ✅ Can request intelligence summaries\n"
-            
-            help_text += "\n🎯 **Ready for tactical operations!**"
+**Roles:**
+• **Observer** - Send observations and reports
+• **Squad Leader** - Receive tactical updates  
+• **Platoon Leader** - Receive tactical intelligence alerts
+• **Platoon 2IC** - Receive logistics and support requests
+        """
         
         await update.message.reply_text(help_text, parse_mode='Markdown')
     
-    async def _handle_status(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Show system status"""
-        stats = user_manager.get_user_statistics()
+    async def _handle_callback_query(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle callback queries from inline keyboards"""
+        query = update.callback_query
+        await query.answer()
         
-        status_msg = f"""📊 **DefHack System Status**
-
-**👥 User Statistics:**
-• Total Users: {stats['total']}
-• Soldiers: {stats['soldier']}
-• Platoon Leaders: {stats['platoon_leader']}
-• Company Commanders: {stats['company_commander']}
-• Battalion Staff: {stats['battalion_staff']}
-• Higher Echelon: {stats['higher_echelon']}
-
-**🔧 System Components:**
-• ✅ Message Processing: Online
-• ✅ OpenAI Integration: Active
-• ✅ DefHack Database: Connected
-• ✅ Leader Notifications: Active
-• ✅ Intelligence Summaries: Available
-
-**📡 Current Time:** {datetime.now(timezone.utc).strftime('%H:%M %d-%m-%Y UTC')}
-
-🎯 **System Status: OPERATIONAL**"""
-        
-        await update.message.reply_text(status_msg, parse_mode='Markdown')
-    
-    async def _handle_frago_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Handle FRAGO generation request"""
         user_id = update.effective_user.id
+        username = update.effective_user.username or f"User_{user_id}"
         
-        if not user_manager.can_request_frago(user_id):
-            await update.message.reply_text(
-                "❌ **Access Denied**\n\n"
-                "You do not have permission to request FRAGO generation.\n"
-                "Only leaders (Platoon Leader and above) can request FRAGOs."
+        if query.data.startswith("register_"):
+            role_data = query.data.replace("register_", "")
+            
+            # Handle special case for Platoon 2IC
+            if role_data == "platoon_2ic":
+                role_display = "Platoon 2IC"
+                role_value = UserRole.PLATOON_2IC
+            elif role_data == "platoon_leader":
+                role_display = "Platoon Leader"
+                role_value = UserRole.PLATOON_LEADER
+            elif role_data == "company_commander":
+                role_display = "Company Commander"
+                role_value = UserRole.COMPANY_COMMANDER
+            else:
+                role_display = "Soldier"
+                role_value = UserRole.SOLDIER
+            
+            # Store the role selection in user context and ask for unit
+            context.user_data['selected_role'] = role_value
+            context.user_data['selected_role_display'] = role_display
+            
+            # Create unit selection keyboard
+            unit_keyboard = [
+                [InlineKeyboardButton("Alpha Company", callback_data="unit_alpha_company")],
+                [InlineKeyboardButton("Bravo Company", callback_data="unit_bravo_company")],
+                [InlineKeyboardButton("Charlie Company", callback_data="unit_charlie_company")],
+                [InlineKeyboardButton("Delta Company", callback_data="unit_delta_company")],
+                [InlineKeyboardButton("HQ Company", callback_data="unit_hq_company")],
+                [InlineKeyboardButton("Other Unit", callback_data="unit_other")]
+            ]
+            reply_markup = InlineKeyboardMarkup(unit_keyboard)
+            
+            await query.edit_message_text(
+                f"✅ Role selected: {role_display}\n\n"
+                f"📍 Please select your unit:",
+                reply_markup=reply_markup
             )
-            return
-        
-        try:
-            # Generate FRAGO using most recent observation
-            frago_data = {
-                'what': 'FRAGO request from leader',
-                'mgrs': 'Command discretion',
-                'confidence': 90,
-                'observer_signature': user_manager.get_user(user_id).username,
-                'time': datetime.now(timezone.utc),
-                'unit': user_manager.get_user(user_id).unit
+            
+        elif query.data.startswith("unit_"):
+            # Handle unit selection
+            unit_data = query.data.replace("unit_", "")
+            
+            if unit_data == "other":
+                await query.edit_message_text(
+                    "📝 Please send me your unit name as a regular message."
+                )
+                context.user_data['awaiting_unit'] = True
+                return
+            
+            # Map unit codes to display names
+            unit_map = {
+                "alpha_company": "Alpha Company",
+                "bravo_company": "Bravo Company", 
+                "charlie_company": "Charlie Company",
+                "delta_company": "Delta Company",
+                "hq_company": "HQ Company"
             }
             
-            results = await self.defhack_bridge.process_telegram_observation(frago_data)
+            unit = unit_map.get(unit_data, "Unknown Unit")
             
-            if 'frago_order' in results:
-                await update.message.reply_text(
-                    f"📋 **FRAGMENTARY ORDER (FRAGO)**\n\n{results['frago_order']}",
-                    parse_mode='Markdown'
-                )
+            # Complete registration
+            role = context.user_data.get('selected_role', UserRole.SOLDIER)
+            role_display = context.user_data.get('selected_role_display', 'Soldier')
+            
+            user_manager.register_user(user_id, username, username, unit, role)
+            
+            # Clear user context
+            context.user_data.clear()
+            
+            await query.edit_message_text(
+                f"🎉 Registration Complete!\n\n"
+                f"👤 Role: {role_display}\n"
+                f"📍 Unit: {unit}\n\n"
+                f"You can now send observations and they will be routed to the appropriate leaders!"
+            )
+            
+        elif query.data.startswith("obs_"):
+            # Handle observation-related callbacks (More Info, FRAGO buttons)
+            if self.leader_notifications:
+                await self.leader_notifications.handle_callback_query(update, context)
+    
+    async def _handle_location(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle location messages"""
+        try:
+            user_id = update.effective_user.id
+            chat_id = update.effective_chat.id
+            cluster_key = f"{chat_id}_{user_id}"
+            
+            location = update.message.location
+            
+            # Convert to MGRS if possible
+            mgrs_coords = None
+            try:
+                import mgrs
+                m = mgrs.MGRS()
+                mgrs_coords = m.toMGRS(location.latitude, location.longitude)
+                self.logger.info(f"📍 Location converted to MGRS: {mgrs_coords}")
+            except ImportError:
+                self.logger.warning("MGRS library not available, using lat/lon")
+                mgrs_coords = f"{location.latitude:.6f},{location.longitude:.6f}"
+            except Exception as e:
+                self.logger.error(f"MGRS conversion failed: {e}")
+                mgrs_coords = f"{location.latitude:.6f},{location.longitude:.6f}"
+            
+            # Check if we have a pending message cluster for this user
+            if cluster_key in self.message_clusters:
+                self.message_clusters[cluster_key]['has_location'] = True
+                self.message_clusters[cluster_key]['location'] = mgrs_coords
+                self.logger.info(f"📍 Added location to existing cluster {cluster_key}: {mgrs_coords}")
+                
+                # Location received, process immediately
+                if cluster_key in self.cluster_timeouts:
+                    self.cluster_timeouts[cluster_key].cancel()
+                
+                await self._process_clustered_messages(cluster_key)
             else:
-                await update.message.reply_text(
-                    "❌ FRAGO generation failed. Please try again or contact S3."
-                )
+                self.logger.info(f"📍 Location received but no pending message cluster for {cluster_key}")
                 
         except Exception as e:
-            self.logger.error(f"FRAGO generation error: {e}")
-            await update.message.reply_text(
-                "❌ FRAGO generation encountered an error. Please try again."
-            )
+            self.logger.error(f"❌ Error handling location: {e}")
     
-    async def _handle_intrep_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Handle intelligence report request"""
-        user_id = update.effective_user.id
-        
-        if not user_manager.can_request_intelligence_summary(user_id):
-            await update.message.reply_text(
-                "❌ **Access Denied**\n\n"
-                "You do not have permission to request intelligence summaries.\n"
-                "Only higher echelon users can request INTREPs."
-            )
-            return
-        
+    async def _handle_photo(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle photo messages"""
         try:
-            summary = await self.higher_echelon_intel.generate_intelligence_summary(
-                SummaryType.DAILY_INTREP, user_id, 24
-            )
+            user_id = update.effective_user.id
+            user = user_manager.get_user(user_id)
             
-            await update.message.reply_text(summary, parse_mode='Markdown')
-            
-        except Exception as e:
-            self.logger.error(f"INTREP generation error: {e}")
-            await update.message.reply_text(
-                "❌ INTREP generation encountered an error. Please try again."
-            )
-    
-    async def _handle_threat_assessment(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Handle threat assessment request"""
-        user_id = update.effective_user.id
-        
-        if not user_manager.can_request_intelligence_summary(user_id):
-            await update.message.reply_text(
-                "❌ **Access Denied**\n\n"
-                "You do not have permission to request threat assessments."
-            )
-            return
-        
-        try:
-            assessment = await self.higher_echelon_intel.generate_intelligence_summary(
-                SummaryType.THREAT_ASSESSMENT, user_id, 24
-            )
-            
-            await update.message.reply_text(assessment, parse_mode='Markdown')
-            
-        except Exception as e:
-            self.logger.error(f"Threat assessment error: {e}")
-            await update.message.reply_text(
-                "❌ Threat assessment generation encountered an error."
-            )
-    
-    async def _handle_activity_summary(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Handle activity summary request"""
-        user_id = update.effective_user.id
-        
-        if not user_manager.can_request_intelligence_summary(user_id):
-            await update.message.reply_text(
-                "❌ **Access Denied**\n\n"
-                "You do not have permission to request activity summaries."
-            )
-            return
-        
-        try:
-            summary = await self.higher_echelon_intel.generate_intelligence_summary(
-                SummaryType.ACTIVITY_SUMMARY, user_id, 24
-            )
-            
-            await update.message.reply_text(summary, parse_mode='Markdown')
-            
-        except Exception as e:
-            self.logger.error(f"Activity summary error: {e}")
-            await update.message.reply_text(
-                "❌ Activity summary generation encountered an error."
-            )
-    
-    async def _handle_profile(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Show user profile"""
-        user_id = update.effective_user.id
-        profile_info = user_manager.format_user_info(user_id)
-        await update.message.reply_text(profile_info, parse_mode='Markdown')
-    
-    async def _process_individual_report(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Process individual tactical reports sent via private message"""
-        user_id = update.effective_user.id
-        
-        try:
-            observation = await self.message_processor.process_message(
-                update.effective_message, user_id, update.effective_chat.id
-            )
-            
-            if observation:
-                # Send confirmation
+            if not user:
                 await update.message.reply_text(
-                    f"✅ **Report Processed**\n\n"
-                    f"📊 Confidence: {observation.confidence_score:.0%}\n"
-                    f"🎯 Method: {observation.processing_method.replace('_', ' ').title()}\n"
-                    f"🚨 Threat Level: {observation.threat_level}\n\n"
-                    f"✅ Leaders have been notified",
-                    parse_mode='Markdown'
+                    "Please register first using /register command"
                 )
-                
-                # Process through leader notifications
-                await self.leader_notifications.process_new_observation(
-                    observation, update.effective_chat.id
-                )
-            else:
-                await update.message.reply_text(
-                    "⚠️ **Unable to process report**\n\n"
-                    "Please provide more detailed tactical information."
-                )
-                
-        except Exception as e:
-            self.logger.error(f"Error processing individual report: {e}")
+                return
+            
+            self.logger.info(f"📸 Photo received from {user.name} ({user.role})")
+            
+            # For now, just acknowledge photo receipt
             await update.message.reply_text(
-                "❌ **Processing Error**\n\n"
-                "Report processing encountered an error. Please try again."
+                "📸 Photo received and will be processed for intelligence analysis"
             )
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error handling photo: {e}")
     
-    def run(self):
-        """Start the DefHack Telegram system"""
-        self.logger.info("Starting DefHack Telegram Intelligence System...")
-        self.app.run_polling(close_loop=False)
+    async def start_bot(self):
+        """Start the bot"""
+        if not self.initialized:
+            await self.initialize()
+        
+        self.logger.info("🚀 Starting DefHack Telegram bot...")
+        await self.app.run_polling(allowed_updates=Update.ALL_TYPES)
+    
+    async def stop_bot(self):
+        """Stop the bot gracefully"""
+        if self.app:
+            self.logger.info("🛑 Stopping DefHack bot...")
+            await self.app.stop()
 
-def create_defhack_telegram_system(token: str = None) -> DefHackTelegramSystem:
-    """Create and initialize the complete DefHack Telegram system"""
-    
-    # Setup logging
-    logging.basicConfig(
-        level=logging.INFO,
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-    )
-    logger = logging.getLogger("DefHack-Telegram")
-    
-    # Get token from environment if not provided
-    if not token:
-        token = os.getenv('TELEGRAM_BOT_TOKEN')
-        if not token:
-            raise ValueError("TELEGRAM_BOT_TOKEN not found in environment variables")
-    
-    # Create system
-    system = DefHackTelegramSystem(token, logger)
-    
-    logger.info("✅ DefHack Telegram Intelligence System initialized")
-    logger.info("🎯 Ready for tactical deployment!")
-    
-    return system
 
-if __name__ == "__main__":
-    # Create and run the DefHack system
-    try:
-        system = create_defhack_telegram_system()
-        system.run()
-    except KeyboardInterrupt:
-        print("\n🛑 DefHack Telegram System stopped by user")
-    except Exception as e:
-        print(f"❌ Error starting DefHack system: {e}")
-        raise
+# Create global instance for import
+defhack_system = None
+
+def get_system(token: str = None) -> DefHackIntegratedSystem:
+    """Get or create the global DefHack system instance"""
+    global defhack_system
+    if defhack_system is None and token:
+        defhack_system = DefHackIntegratedSystem(token)
+    return defhack_system
