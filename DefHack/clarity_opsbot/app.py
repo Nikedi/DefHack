@@ -17,7 +17,7 @@ from telegram.ext import (
 from .config import TELEGRAM_BOT_TOKEN, configure_logging
 from .handlers import create_direct_handlers, create_group_handlers
 from .observation_repository import ObservationRepository
-from .services import FragoGenerator
+from .services import FragoGenerator, MapManager
 from .services.openai_analyzer import OpenAIAnalyzer
 
 
@@ -43,11 +43,16 @@ def build_app(token: Optional[str] = None) -> Application:
 
     analyzer = OpenAIAnalyzer(logger)
     analyzer.set_application(app)
+    map_manager = MapManager(logger)
 
     observation_repo = ObservationRepository()
     frago_generator = FragoGenerator(observation_repo)
 
-    for handler in create_group_handlers(analyzer, logger):
+    for handler in create_group_handlers(
+        analyzer,
+        logger,
+        map_manager=map_manager,
+    ):
         app.add_handler(handler)
     app.add_handler(CommandHandler("start", _start_group, filters=filters.ChatType.GROUPS))
     app.add_handler(CommandHandler("help", _help_group, filters=filters.ChatType.GROUPS))
