@@ -676,14 +676,16 @@ class DefHackIntegratedSystem:
         except Exception as e:
             self.logger.error(f"❌ Error handling photo: {e}")
     
-    async def start_bot(self):
+    def start_bot(self):
         """Start the bot"""
         if not self.initialized:
-            await self.initialize()
+            # Run initialization synchronously
+            import asyncio
+            asyncio.run(self.initialize())
         
         self.logger.info("🚀 Starting DefHack Telegram bot...")
-        # Use polling with close_loop=False to avoid event loop conflicts
-        await self.app.run_polling(allowed_updates=Update.ALL_TYPES, close_loop=False)
+        # Use the synchronous run_polling method that manages its own event loop
+        self.app.run_polling(allowed_updates=Update.ALL_TYPES, drop_pending_updates=True)
     
     async def stop_bot(self):
         """Stop the bot gracefully"""
@@ -735,11 +737,11 @@ def create_defhack_telegram_system() -> DefHackIntegratedSystem:
     # Create and return the system
     return DefHackIntegratedSystem(token)
 
-async def main():
+def main():
     """Main entry point for running the bot"""
     try:
         system = create_defhack_telegram_system()
-        await system.start_bot()
+        system.start_bot()
     except KeyboardInterrupt:
         print("\n👋 DefHack Telegram Bot shutting down...")
     except Exception as e:
@@ -748,4 +750,4 @@ async def main():
         traceback.print_exc()
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()

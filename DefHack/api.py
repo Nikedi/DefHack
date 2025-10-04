@@ -1,4 +1,4 @@
-from fastapi import FastAPI, UploadFile, File, Form, Depends, Header, HTTPException
+from fastapi import FastAPI, UploadFile, File, Form, Depends, Header, HTTPException, Query
 from datetime import datetime
 from .db import SessionLocal
 from .config import settings
@@ -70,3 +70,80 @@ async def draft_order(query: str, k: int = 10, db=Depends(get_db)):
     ctx = await hybrid_search(db, query, k)
     text, citations = await generate_order_from_context(query, ctx)
     return {"body": text, "citations": citations}
+
+@app.get("/observations")
+async def get_observations(
+    limit: int = Query(100, le=1000, description="Maximum number of observations to return"),
+    offset: int = Query(0, ge=0, description="Number of observations to skip"),
+    db=Depends(get_db)
+):
+    """
+    Retrieve ALL sensor observations from the database.
+    No filtering applied - returns all observations with pagination only.
+    """
+    import asyncpg
+    from .config import settings
+    
+    # Use direct asyncpg connection with Docker service name
+    conn = await asyncpg.connect(
+        host="db",
+        port=5432,
+        user="postgres", 
+        password="postgres",
+        database="defhack"
+    )
+    
+    try:
+        # Build the query to return ALL observations with pagination only
+        query = """
+        SELECT 
+            time,
+            sensor_id,
+            unit,
+            observer_signature,
+            mgrs,
+            what,
+            amount,
+            confidence,
+            received_at
+        FROM sensor_reading
+        ORDER BY received_at DESC 
+        LIMIT $1 OFFSET $2
+        """
+        params = [limit, offset]
+        
+        # Execute the query
+        rows = await conn.fetch(query, *params)
+        
+        # Convert to list of dictionaries
+        observations = []
+        for row in rows:
+            observation = {
+                'time': row['time'].isoformat() if row['time'] else None,
+                'sensor_id': row['sensor_id'],
+                'unit': row['unit'],
+                'observer_signature': row['observer_signature'],
+                'mgrs': row['mgrs'],
+                'what': row['what'],
+                'amount': float(row['amount']) if row['amount'] else None,
+                'confidence': row['confidence'],
+                'received_at': row['received_at'].isoformat() if row['received_at'] else None
+            }
+            observations.append(observation)
+        
+        # Get total count for pagination info (no filters)
+        count_query = "SELECT COUNT(*) FROM sensor_reading"
+        total_count = await conn.fetchval(count_query)
+        
+        return {
+            "observations": observations,
+            "pagination": {
+                "limit": limit,
+                "offset": offset,
+                "total": total_count,
+                "returned": len(observations)
+            }
+        }
+    
+    finally:
+        await conn.close()

@@ -16,6 +16,8 @@ import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 try:
+    # Import from the root directory
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
     from military_operations_integration import DefHackMilitaryOperations
     from defhack_unified_input import DefHackClient
 except ImportError as e:
