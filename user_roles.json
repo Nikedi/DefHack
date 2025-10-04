@@ -8,7 +8,7 @@
     "rank": null,
     "callsign": null,
     "registered_at": "2025-10-04T08:11:01.198936+00:00",
-    "last_active": "2025-10-04T22:48:42.282726+00:00",
+    "last_active": "2025-10-04T23:05:03.827597+00:00",
     "phone_number": null
   },
   "887241145": {
@@ -153,6 +153,18 @@
     "callsign": null,
     "registered_at": "2025-10-04T18:12:07.250945+00:00",
     "last_active": "2025-10-04T20:10:48.366048+00:00",
+    "phone_number": null
+  },
+  "6563195850": {
+    "user_id": 6563195850,
+    "username": "veksa10",
+    "full_name": "veksa10",
+    "role": "platoon_leader",
+    "unit": "Alpha Company",
+    "rank": null,
+    "callsign": null,
+    "registered_at": "2025-10-04T23:01:30.563407+00:00",
+    "last_active": "2025-10-04T23:05:58.984004+00:00",
     "phone_number": null
   }
 }

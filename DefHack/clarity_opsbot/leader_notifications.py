@@ -189,49 +189,6 @@ class LeaderNotificationSystem:
                 parse_mode='HTML'
             )
             
-            # Send comprehensive raw database data (including removed fields)
-            if raw_db_data and observation_id:
-                debug_msg = f"🔧 <b>RAW DATABASE INPUT - Entry {observation_id}:</b>\n<code>"
-                
-                # Include all database fields in specific order
-                debug_msg += f"database_id: {observation_id}\n"
-                debug_msg += f"what: {raw_db_data.get('what', 'Unknown')}\n"
-                
-                mgrs_value = raw_db_data.get('mgrs')
-                debug_msg += f"mgrs: {mgrs_value if mgrs_value is not None else 'null'}\n"
-                
-                debug_msg += f"confidence: {raw_db_data.get('confidence', 'Unknown')}\n"
-                debug_msg += f"observer_signature: {raw_db_data.get('observer_signature', 'Unknown')}\n"
-                
-                if raw_db_data.get('time'):
-                    if hasattr(raw_db_data['time'], 'isoformat'):
-                        debug_msg += f"time: {raw_db_data['time'].isoformat()}\n"
-                    else:
-                        debug_msg += f"time: {raw_db_data['time']}\n"
-                
-                debug_msg += f"unit: {raw_db_data.get('unit', 'Unknown')}\n"
-                debug_msg += f"processing_method: {raw_db_data.get('processing_method', 'Unknown')}\n"
-                debug_msg += f"threat_level: {raw_db_data.get('threat_level', 'Unknown')}\n"
-                
-                if raw_db_data.get('amount'):
-                    debug_msg += f"amount: {raw_db_data.get('amount')}\n"
-                else:
-                    debug_msg += f"amount: null\n"
-                
-                # Include original message (removed from main notification)
-                original_msg = raw_db_data.get('original_message')
-                debug_msg += f"original_message: {original_msg if original_msg is not None else 'null'}\n"
-                
-                debug_msg += "</code>"
-                
-                await self.bot.send_message(
-                    chat_id=leader_user_id,
-                    text=debug_msg,
-                    parse_mode='HTML'
-                )
-                
-        
-            
             self.logger.info(f"Sent {priority.value} priority notification to leader {leader_user_id}")
             
         except Exception as e:
@@ -439,9 +396,9 @@ class LeaderNotificationSystem:
             text=detail_message,
             parse_mode='Markdown'
         )
-    
-    async def send_intelligence_alert(self, threat_level: str, message: str, 
-                                    target_roles: List[str] = None) -> None:
+
+    async def send_intelligence_alert(self, threat_level: str, message: str,
+                                       target_roles: List[str] = None) -> None:
         """Send intelligence alerts to specified user roles"""
         if target_roles is None:
             target_roles = ['platoon_leader', 'company_commander', 'higher_echelon']
