@@ -35,6 +35,23 @@ DEFAULT_BACKLOG_PATH = Path(__file__).parent / "sensor_backlog.json"
 ErrorKind = Literal["http", "network", "unexpected"]
 
 
+def _emit(message: str) -> None:
+	print(message, flush=True)
+
+
+def _debug(message: str, *, enabled: bool) -> None:
+	if enabled:
+		_emit(f"[debug] {message}")
+
+
+def _mask_secret(value: Optional[str]) -> str:
+	if not value:
+		return "None"
+	if len(value) <= 4:
+		return "***"
+	return f"{value[:4]}***{value[-4:]}"
+
+
 @dataclass
 class AppConfig:
 	interval: float
@@ -58,6 +75,7 @@ class AppConfig:
 	caption_corpus: Optional[Path]
 	image_history: int
 	http_timeout: float
+	debug: bool
 
 
 def parse_args(argv: Sequence[str]) -> AppConfig:
@@ -99,6 +117,7 @@ def parse_args(argv: Sequence[str]) -> AppConfig:
 	parser.add_argument("--caption-corpus", type=Path, default=None, help="Optional phrase corpus for CLIP retrieval")
 	parser.add_argument("--image-history", type=int, default=5, help="How many captured images to retain on disk (default: 5)")
 	parser.add_argument("--http-timeout", type=float, default=5.0, help="Seconds before HTTP POST attempts time out (default: 5)")
+	parser.add_argument("--debug", action="store_true", help="Enable verbose debug logging")
 	args = parser.parse_args(argv)
 
 	return AppConfig(
@@ -123,6 +142,7 @@ def parse_args(argv: Sequence[str]) -> AppConfig:
 		caption_corpus=args.caption_corpus.resolve() if args.caption_corpus else None,
 		image_history=max(1, args.image_history),
 		http_timeout=max(1.0, args.http_timeout),
+		debug=args.debug,
 	)
 
 
@@ -172,7 +192,7 @@ def _load_backlog(path: Path) -> List[dict[str, object]]:
 		if isinstance(data, list):
 			return [item for item in data if isinstance(item, dict)]
 	except Exception as exc:
-		print(f"Warning: failed to read backlog {path}: {exc}")
+		_emit(f"Warning: failed to read backlog {path}: {exc}")
 	return []
 
 
@@ -187,7 +207,7 @@ def _save_backlog(path: Path, backlog: Sequence[dict[str, object]]) -> None:
 	try:
 		path.write_text(json.dumps(list(backlog), indent=2), encoding="utf-8")
 	except Exception as exc:
-		print(f"Warning: failed to persist backlog {path}: {exc}")
+		_emit(f"Warning: failed to persist backlog {path}: {exc}")
 
 
 def _post_payload(
@@ -259,12 +279,18 @@ def _deliver_readings(
 	url: str,
 	api_key: Optional[str],
 	timeout: float,
+	debug: bool = False,
 ) -> None:
 	if not payloads and not backlog_path.exists():
 		return
 
 	backlog = _load_backlog(backlog_path)
+	original_backlog_len = len(backlog)
 	backlog.extend(payloads)
+	_debug(
+		f"Delivering {len(backlog)} payload(s) (new={len(payloads)}, backlog={original_backlog_len})",
+		enabled=debug,
+	)
 
 	remaining: List[dict[str, object]] = []
 	delivered = 0
@@ -274,7 +300,7 @@ def _deliver_readings(
 		success, error_message, error_kind = _post_payload(payload, url=url, api_key=api_key, timeout=timeout)
 		if success:
 			delivered += 1
-			print(f"Delivered reading: {payload.get('what')} @ {payload.get('time')}")
+			_emit(f"Delivered reading: {payload.get('what')} @ {payload.get('time')}")
 		else:
 			if error_message:
 				failure_counts[error_message] = failure_counts.get(error_message, 0) + 1
@@ -282,18 +308,22 @@ def _deliver_readings(
 			if error_kind == "network":
 				if idx + 1 < len(backlog):
 					remaining.extend(backlog[idx + 1 :])
+				_debug(
+					"Network error detected; deferring remaining payloads to backlog for retry.",
+					enabled=debug,
+				)
 				break
 
 	for message, count in failure_counts.items():
 		if count == 1:
-			print(message)
+			_emit(message)
 		else:
-			print(f"{message} (repeated {count} times)")
+			_emit(f"{message} (repeated {count} times)")
 
 	if remaining:
-		print(f"{len(remaining)} readings queued for retry.")
+		_emit(f"{len(remaining)} readings queued for retry.")
 	elif delivered:
-		print("Backlog cleared.")
+		_emit("Backlog cleared.")
 
 	_save_backlog(backlog_path, remaining)
 
@@ -301,7 +331,7 @@ def _deliver_readings(
 def _capture_frame(camera: CameraWorker, save_dir: Path) -> Optional[Path]:
 	frame = camera.get_latest_frame(timeout=2.0)
 	if frame is None:
-		print("No frame available from camera.")
+		_emit("No frame available from camera.")
 		return None
 
 	ensure_folder(str(save_dir))
@@ -309,10 +339,10 @@ def _capture_frame(camera: CameraWorker, save_dir: Path) -> Optional[Path]:
 	image_path = save_dir / f"capture_{timestamp}.jpg"
 	try:
 		if not cv2.imwrite(str(image_path), frame):
-			print(f"Failed to write image to {image_path}.")
+			_emit(f"Failed to write image to {image_path}.")
 			return None
 	except Exception as exc:
-		print(f"Error while saving image {image_path}: {exc}")
+		_emit(f"Error while saving image {image_path}: {exc}")
 		return None
 	return image_path
 
@@ -340,16 +370,20 @@ def _prune_captures(folder: Path, *, keep: int) -> None:
 		for _, path in entries[:-keep]:
 			try:
 				path.unlink()
-				print(f"Removed stale capture: {path.name}")
+				_emit(f"Removed stale capture: {path.name}")
 			except Exception:
 				pass
 	except Exception as exc:
-		print(f"Warning: failed to prune captures in {folder}: {exc}")
+		_emit(f"Warning: failed to prune captures in {folder}: {exc}")
 
 
 def _run_inference(image_path: Path, config: AppConfig) -> List[SensorObservationIn]:
 	weights = config.weights or Yolov8PersonCaptionSchema.DEFAULT_WEIGHTS
 	caption_model = config.caption_model or Yolov8PersonCaptionSchema.DEFAULT_CAPTION_MODEL
+	_debug(
+		f"Running inference on {image_path.name} (weights={weights}, caption_model={caption_model}, device={config.device or 'auto'})",
+		enabled=config.debug,
+	)
 	try:
 		readings, _, _ = Yolov8PersonCaptionSchema.analyze_image(
 			image_path,
@@ -365,28 +399,39 @@ def _run_inference(image_path: Path, config: AppConfig) -> List[SensorObservatio
 			caption_top_k=config.caption_top_k,
 		)
 		if readings:
-			print(f"Detected {len(readings)} target categories from {image_path.name}.")
+			_emit(f"Detected {len(readings)} target categories from {image_path.name}.")
 		else:
-			print(f"No relevant detections found in {image_path.name}.")
+			_emit(f"No relevant detections found in {image_path.name}.")
 		return readings
 	except Exception as exc:
-		print(f"Inference failed for {image_path}: {exc}")
+		_emit(f"Inference failed for {image_path}: {exc}")
 		return []
 
 
 def main(argv: Sequence[str] | None = None) -> int:
 	config = parse_args(argv if argv is not None else sys.argv[1:])
+	_debug(
+		"App configuration prepared: "
+		f"interval={config.interval}s, iterations={config.iterations or '∞'}, mgrs={config.mgrs}, sensor_id={config.sensor_id}, "
+		f"api_url={config.api_url}, api_key={_mask_secret(config.api_key)}, backlog_file={config.backlog_file}, save_folder={config.save_folder}, "
+		f"test_images={len(config.test_images) if config.test_images else 0}, caption={'on' if config.caption else 'off'}, http_timeout={config.http_timeout}s",
+		enabled=config.debug,
+	)
 
 	camera = CameraWorker(src=config.source, test_images=[str(p) for p in config.test_images] if config.test_images else None)
 	empty_frame_runs = 0
 
 	try:
 		camera.start()
-		print("Camera worker started.")
+		_emit("Camera worker started.")
+		_debug(
+			f"Camera worker thread launched (source={config.source}, test_images={len(config.test_images) if config.test_images else 0}).",
+			enabled=config.debug,
+		)
 		iteration = 0
 		while config.iterations is None or iteration < config.iterations:
 			iteration += 1
-			print(f"\nIteration {iteration}")
+			_emit(f"\nIteration {iteration}")
 			loop_started = time.time()
 
 			image_path = _capture_frame(camera, config.save_folder)
@@ -395,11 +440,11 @@ def main(argv: Sequence[str] | None = None) -> int:
 				if config.test_images:
 					threshold = max(5, len(config.test_images))
 					if empty_frame_runs >= threshold:
-						print("No more test frames available; ending loop.")
+						_emit("No more test frames available; ending loop.")
 						break
 				else:
 					if empty_frame_runs >= 1:
-						print("No frames captured from camera. Connect a camera or supply --test-images to proceed.")
+						_emit("No frames captured from camera. Connect a camera or supply --test-images to proceed.")
 						break
 				time.sleep(1.0)
 				continue
@@ -414,16 +459,18 @@ def main(argv: Sequence[str] | None = None) -> int:
 					url=config.api_url,
 					api_key=config.api_key,
 					timeout=config.http_timeout,
+					debug=config.debug,
 				)
 			_prune_captures(config.save_folder, keep=config.image_history)
 
 			elapsed = time.time() - loop_started
 			sleep_for = max(0.0, config.interval - elapsed)
 			if sleep_for:
+				_debug(f"Sleeping for {sleep_for:.2f}s before next iteration.", enabled=config.debug)
 				time.sleep(sleep_for)
 
 	except KeyboardInterrupt:
-		print("Stopping ingestion loop (KeyboardInterrupt).")
+		_emit("Stopping ingestion loop (KeyboardInterrupt).")
 	finally:
 		camera.stop()
 		try:
@@ -431,7 +478,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 				cv2.destroyAllWindows()
 		except cv2.error as exc:  # pragma: no cover - GUI not available on headless envs
 			msg = getattr(exc, "msg", str(exc))
-			print(f"Skipping destroyAllWindows: {msg}")
+			_emit(f"Skipping destroyAllWindows: {msg}")
 
 	if empty_frame_runs and not config.test_images:
 		return 1
