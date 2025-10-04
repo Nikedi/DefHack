@@ -6,12 +6,15 @@ import asyncio
 import json
 import logging
 from dataclasses import dataclass
-from datetime import datetime
-from typing import Any, Dict, Iterable, List, Optional, Sequence
+from datetime import datetime, timezone
+from typing import TYPE_CHECKING, Any, Dict, Iterable, List, Optional, Sequence
 
 from ..config import BATCH_WINDOW_SECONDS, GEMINI_API_KEY, GEMINI_MODEL_NAME
 from ..models import SensorReading
 from ..utils import extract_json_payload
+
+if TYPE_CHECKING:  # pragma: no cover - type checking only
+    from .map_manager import MapManager
 
 try:  # pragma: no cover - optional dependency
     from google import generativeai as genai  # type: ignore[attr-defined]
@@ -37,6 +40,7 @@ class GeminiAnalyzer:
         self._batch_lock = asyncio.Lock()
         self._application = None
         self._gemini_model = self._build_model()
+        self._map_manager = None
 
     def _build_model(self):  # pragma: no cover - external dependency
         if GEMINI_API_KEY and genai is not None:
@@ -53,6 +57,10 @@ class GeminiAnalyzer:
     def set_application(self, application) -> None:
         """Associate the Telegram application for callbacks."""
         self._application = application
+
+    def set_map_manager(self, map_manager: Optional["MapManager"]) -> None:
+        """Attach a MapManager to mirror fused observations onto the tactical map."""
+        self._map_manager = map_manager
 
     async def queue_for_analysis(self, chat_id: int, message: Dict[str, Any]) -> None:
         if self._gemini_model is None:
@@ -82,6 +90,8 @@ class GeminiAnalyzer:
         observations = await self.analyze_with_gemini(entry.messages)
         if not observations:
             return
+        if self._map_manager:
+            await self._record_map_observations(chat_id, observations)
         payload = self._serialise_observations(observations)
         self._logger.debug("Gemini observations for chat %s: %s", chat_id, payload)
         if self._application:
@@ -111,6 +121,49 @@ class GeminiAnalyzer:
             if reading:
                 readings.append(reading)
         return readings
+
+    async def _record_map_observations(
+        self,
+        chat_id: int,
+        observations: Iterable[SensorReading],
+    ) -> None:
+        if not self._map_manager:
+            return
+        for reading in observations:
+            observed_at = reading.time
+            if not isinstance(observed_at, datetime):
+                try:
+                    observed_at = datetime.fromisoformat(str(observed_at))
+                except ValueError:
+                    observed_at = datetime.now(timezone.utc)
+            if observed_at.tzinfo is None:
+                observed_at = observed_at.replace(tzinfo=timezone.utc)
+            mgrs_value = getattr(reading, "mgrs", None)
+            tags = []
+            if reading.unit:
+                tags.append(reading.unit)
+            if reading.observer_signature:
+                tags.append(reading.observer_signature)
+            try:
+                await self._map_manager.add_observation(
+                    chat_id=chat_id,
+                    source_id=f"gemini-{reading.observer_signature}-{reading.time.isoformat()}",
+                    lat=None,
+                    lon=None,
+                    text=reading.what,
+                    what=reading.what,
+                    amount=reading.amount,
+                    observed_at=observed_at,
+                    unit=reading.unit,
+                    observer=reading.observer_signature,
+                    source_type="fused",
+                    confidence=float(reading.confidence),
+                    accuracy_m=None,
+                    tags=tags,
+                    mgrs=mgrs_value,
+                )
+            except Exception:  # pragma: no cover - defensive logging
+                self._logger.exception("Failed to mirror Gemini observation to map.")
 
     def _coerce_sensor_reading(self, item: Dict[str, Any]) -> Optional[SensorReading]:
         try:

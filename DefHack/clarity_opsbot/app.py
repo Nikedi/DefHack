@@ -17,7 +17,7 @@ from telegram.ext import (
 from .config import TELEGRAM_BOT_TOKEN, configure_logging
 from .handlers import create_direct_handlers, create_group_handlers
 from .observation_repository import ObservationRepository
-from .services import FragoGenerator, GeminiAnalyzer, SpeechTranscriber
+from .services import FragoGenerator, GeminiAnalyzer, MapManager, SpeechTranscriber
 
 
 async def _start_group(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -43,11 +43,18 @@ def build_app(token: Optional[str] = None) -> Application:
     analyzer = GeminiAnalyzer(logger)
     analyzer.set_application(app)
     transcriber = SpeechTranscriber(logger)
+    map_manager = MapManager(logger)
+    analyzer.set_map_manager(map_manager)
 
     observation_repo = ObservationRepository()
     frago_generator = FragoGenerator(observation_repo)
 
-    for handler in create_group_handlers(analyzer, logger, transcriber):
+    for handler in create_group_handlers(
+        analyzer,
+        logger,
+        transcriber,
+        map_manager=map_manager,
+    ):
         app.add_handler(handler)
     app.add_handler(CommandHandler("start", _start_group, filters=filters.ChatType.GROUPS))
     app.add_handler(CommandHandler("help", _help_group, filters=filters.ChatType.GROUPS))
