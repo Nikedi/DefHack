@@ -16,7 +16,7 @@ import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Iterable, List, Optional, Sequence
+from typing import Iterable, List, Optional, Sequence, Literal
 
 import cv2
 from urllib import error, request
@@ -30,6 +30,9 @@ DEFAULT_API_URL = "http://localhost:8080/ingest/sensor"
 DEFAULT_API_KEY = "583C55345736D7218355BCB51AA47"
 DEFAULT_SAVE_FOLDER = Path(__file__).parent / "sensors" / "images" / "current_image"
 DEFAULT_BACKLOG_PATH = Path(__file__).parent / "sensor_backlog.json"
+
+
+ErrorKind = Literal["http", "network", "unexpected"]
 
 
 @dataclass
@@ -187,7 +190,13 @@ def _save_backlog(path: Path, backlog: Sequence[dict[str, object]]) -> None:
 		print(f"Warning: failed to persist backlog {path}: {exc}")
 
 
-def _post_payload(payload: dict[str, object], *, url: str, api_key: Optional[str], timeout: float) -> bool:
+def _post_payload(
+	payload: dict[str, object],
+	*,
+	url: str,
+	api_key: Optional[str],
+	timeout: float,
+) -> tuple[bool, Optional[str], Optional[ErrorKind]]:
 	encoded = json.dumps(payload).encode("utf-8")
 	req = request.Request(url, data=encoded, method="POST")
 	req.add_header("Content-Type", "application/json")
@@ -199,15 +208,19 @@ def _post_payload(payload: dict[str, object], *, url: str, api_key: Optional[str
 			if 200 <= status < 300:
 				# Consume response body to avoid resource warnings.
 				resp.read()
-				return True
-			print(f"Server responded with HTTP {status}, will retry later.")
+				return True, None, None
+			message = f"Server responded with HTTP {status}, will retry later."
+			return False, message, "http"
 	except error.HTTPError as http_exc:
-		print(f"HTTP error posting sensor reading: {http_exc.status} {http_exc.reason}")
+		message = f"HTTP error posting sensor reading: {http_exc.status} {http_exc.reason}"
+		return False, message, "http"
 	except error.URLError as url_exc:
-		print(f"Network error posting sensor reading: {url_exc}")
+		message = f"Network error posting sensor reading: {url_exc}"
+		return False, message, "network"
 	except Exception as exc:
-		print(f"Unexpected error posting sensor reading: {exc}")
-	return False
+		message = f"Unexpected error posting sensor reading: {exc}"
+		return False, message, "unexpected"
+	return False, "Unknown error posting sensor reading.", "unexpected"
 
 
 def _prepare_payloads(
@@ -255,13 +268,27 @@ def _deliver_readings(
 
 	remaining: List[dict[str, object]] = []
 	delivered = 0
+	failure_counts: dict[str, int] = {}
 
-	for payload in backlog:
-		if _post_payload(payload, url=url, api_key=api_key, timeout=timeout):
+	for idx, payload in enumerate(backlog):
+		success, error_message, error_kind = _post_payload(payload, url=url, api_key=api_key, timeout=timeout)
+		if success:
 			delivered += 1
 			print(f"Delivered reading: {payload.get('what')} @ {payload.get('time')}")
 		else:
+			if error_message:
+				failure_counts[error_message] = failure_counts.get(error_message, 0) + 1
 			remaining.append(payload)
+			if error_kind == "network":
+				if idx + 1 < len(backlog):
+					remaining.extend(backlog[idx + 1 :])
+				break
+
+	for message, count in failure_counts.items():
+		if count == 1:
+			print(message)
+		else:
+			print(f"{message} (repeated {count} times)")
 
 	if remaining:
 		print(f"{len(remaining)} readings queued for retry.")
