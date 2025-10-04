@@ -144,7 +144,6 @@ class DefHackTelegramBridge:
         
         observation = {
             'what': what,
-            'mgrs': mgrs,  # Can be null if no location provided
             'confidence': confidence,
             'observer_signature': observer,  # Telegram username
             'time': observation_time.isoformat(),  # Convert datetime to ISO string
@@ -152,6 +151,10 @@ class DefHackTelegramBridge:
             'unit': unit,  # First two words of group name
             'amount': telegram_data.get('amount', 1.0)  # Default to 1.0 if null
         }
+        
+        # Only include MGRS if it's not null
+        if mgrs is not None:
+            observation['mgrs'] = mgrs
         
         self.logger.debug(f"📝 Converted observation: {observation}")
         return observation

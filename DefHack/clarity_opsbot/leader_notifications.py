@@ -164,21 +164,54 @@ class LeaderNotificationSystem:
             # Format notification message
             notification_msg = self._format_leader_notification(observation, priority, observation_id)
             
-            # Send notification
+            # Create action buttons for the notification
+            keyboard = self._create_observation_action_keyboard(
+                observation_id, 
+                observation.original_message is not None,
+                original_chat_id
+            )
+            
+            # Send notification with buttons
             await self.bot.send_message(
                 chat_id=leader_user_id,
                 text=notification_msg,
+                reply_markup=keyboard,
                 parse_mode='HTML'
             )
             
-            # Send debugging information with raw database data
+            # Send comprehensive raw database data (including removed fields)
             if raw_db_data and observation_id:
                 debug_msg = f"🔧 <b>RAW DATABASE INPUT - Entry {observation_id}:</b>\n<code>"
-                for key, value in raw_db_data.items():
-                    if key == 'time' and hasattr(value, 'isoformat'):
-                        debug_msg += f"{key}: {value.isoformat()}\n"
+                
+                # Include all database fields in specific order
+                debug_msg += f"database_id: {observation_id}\n"
+                debug_msg += f"what: {raw_db_data.get('what', 'Unknown')}\n"
+                
+                mgrs_value = raw_db_data.get('mgrs')
+                debug_msg += f"mgrs: {mgrs_value if mgrs_value is not None else 'null'}\n"
+                
+                debug_msg += f"confidence: {raw_db_data.get('confidence', 'Unknown')}\n"
+                debug_msg += f"observer_signature: {raw_db_data.get('observer_signature', 'Unknown')}\n"
+                
+                if raw_db_data.get('time'):
+                    if hasattr(raw_db_data['time'], 'isoformat'):
+                        debug_msg += f"time: {raw_db_data['time'].isoformat()}\n"
                     else:
-                        debug_msg += f"{key}: {str(value)[:100]}{'...' if len(str(value)) > 100 else ''}\n"
+                        debug_msg += f"time: {raw_db_data['time']}\n"
+                
+                debug_msg += f"unit: {raw_db_data.get('unit', 'Unknown')}\n"
+                debug_msg += f"processing_method: {raw_db_data.get('processing_method', 'Unknown')}\n"
+                debug_msg += f"threat_level: {raw_db_data.get('threat_level', 'Unknown')}\n"
+                
+                if raw_db_data.get('amount'):
+                    debug_msg += f"amount: {raw_db_data.get('amount')}\n"
+                else:
+                    debug_msg += f"amount: null\n"
+                
+                # Include original message (removed from main notification)
+                original_msg = raw_db_data.get('original_message')
+                debug_msg += f"original_message: {original_msg if original_msg is not None else 'null'}\n"
+                
                 debug_msg += "</code>"
                 
                 await self.bot.send_message(
@@ -187,27 +220,7 @@ class LeaderNotificationSystem:
                     parse_mode='HTML'
                 )
                 
-                # Send clean human-readable version without JSON formatting
-                clean_msg = f"📋 <b>HUMAN READABLE - Entry {observation_id}:</b>\n\n"
-                clean_msg += f"<b>What was seen:</b> {raw_db_data.get('what', 'Unknown')}\n"
-                mgrs_value = raw_db_data.get('mgrs')
-                clean_msg += f"<b>Location:</b> {mgrs_value if mgrs_value is not None else 'No location provided'}\n"
-                clean_msg += f"<b>Observer:</b> {raw_db_data.get('observer_signature', 'Unknown')}\n"
-                clean_msg += f"<b>Time:</b> {raw_db_data.get('time', 'Unknown')}\n"
-                clean_msg += f"<b>Unit:</b> {raw_db_data.get('unit', 'Unknown')}\n"
-                clean_msg += f"<b>Confidence:</b> {raw_db_data.get('confidence', 'Unknown')}%\n"
-                clean_msg += f"<b>Threat Level:</b> {raw_db_data.get('threat_level', 'Unknown')}\n"
-                if raw_db_data.get('amount'):
-                    clean_msg += f"<b>Quantity:</b> {raw_db_data.get('amount')}\n"
-                clean_msg += f"<b>Processing:</b> {raw_db_data.get('processing_method', 'Unknown')}\n"
-                original_msg = raw_db_data.get('original_message')
-                clean_msg += f"<b>Original Message:</b> {original_msg if original_msg is not None else 'N/A (sensor data)'}"
-                
-                await self.bot.send_message(
-                    chat_id=leader_user_id,
-                    text=clean_msg,
-                    parse_mode='HTML'
-                )
+        
             
             self.logger.info(f"Sent {priority.value} priority notification to leader {leader_user_id}")
             
@@ -243,15 +256,33 @@ class LeaderNotificationSystem:
         message += f"<b>Confidence:</b> {observation.formatted_data.get('confidence', 50)}%\n"
         message += f"<b>Processing:</b> {observation.processing_method.replace('_', ' ').title()}\n\n"
         
-        if observation.original_message and observation.original_message != observation.formatted_data.get('what', ''):
-            message += f"<b>Original Report:</b> {observation.original_message[:200]}{'...' if len(observation.original_message) > 200 else ''}\n\n"
-        
-        if observation_id:
-            message += f"<b>Database ID:</b> {observation_id}\n\n"
+
         
         message += "<b>Action Required:</b> Review observation and determine if FRAGO is needed."
         
         return message
+    
+    def _create_observation_action_keyboard(self, observation_id: str, 
+                                           has_original_message: bool, 
+                                           original_chat_id: int) -> InlineKeyboardMarkup:
+        """Create inline keyboard for observation actions"""
+        keyboard = []
+        
+        # Use timestamp as fallback if observation_id is unknown
+        fallback_id = observation_id if observation_id and observation_id != "unknown" else f"temp_{int(datetime.now().timestamp())}"
+        
+        # Add More Info button only if there's an original message
+        if has_original_message:
+            keyboard.append([
+                InlineKeyboardButton("📄 More Info", callback_data=f"more_info_{fallback_id}")
+            ])
+        
+        # Add FRAGO button
+        keyboard.append([
+            InlineKeyboardButton("📋 Generate FRAGO", callback_data=f"frago_{fallback_id}_{original_chat_id}")
+        ])
+        
+        return InlineKeyboardMarkup(keyboard)
     
     def _create_frago_request_keyboard(self, observer_user_id: int, 
                                      chat_id: int, observation_time: str) -> InlineKeyboardMarkup:
@@ -303,6 +334,12 @@ class LeaderNotificationSystem:
             
             elif callback_data.startswith("details_"):
                 await self._send_detailed_observation_info(query)
+            
+            elif callback_data.startswith("more_info_"):
+                await self._handle_more_info_request(query)
+                
+            elif callback_data.startswith("frago_"):
+                await self._handle_frago_generation(query)
                 
         except Exception as e:
             self.logger.error(f"Error handling FRAGO request: {e}")
@@ -429,6 +466,153 @@ class LeaderNotificationSystem:
             
         except Exception as e:
             self.logger.error(f"Failed to send intelligence alert: {e}")
+    
+    async def _handle_more_info_request(self, query) -> None:
+        """Handle More Info button press - show original messages"""
+        try:
+            # Extract observation ID from callback data
+            observation_id = query.data.split("_", 2)[2]
+            
+            # Get observation data from database
+            observation_data = await self._get_observation_by_id(observation_id)
+            
+            if not observation_data or not observation_data.get('original_message'):
+                await query.answer("No additional information available.")
+                return
+            
+            # Format comprehensive information including original message
+            info_msg = f"📄 <b>DETAILED INFORMATION - Entry {observation_id}</b>\n\n"
+            
+            # Original message section
+            info_msg += f"<b>Original Message:</b>\n<code>{observation_data['original_message']}</code>\n\n"
+            
+            # Detailed observation data
+            info_msg += f"<b>What was seen:</b> {observation_data.get('what', 'Unknown')}\n"
+            mgrs_value = observation_data.get('mgrs')
+            info_msg += f"<b>Location:</b> {mgrs_value if mgrs_value is not None else 'No location provided'}\n"
+            info_msg += f"<b>Observer:</b> {observation_data.get('observer_signature', 'Unknown')}\n"
+            info_msg += f"<b>Time:</b> {observation_data.get('time', 'Unknown')}\n"
+            info_msg += f"<b>Unit:</b> {observation_data.get('unit', 'Unknown')}\n"
+            info_msg += f"<b>Confidence:</b> {observation_data.get('confidence', 'Unknown')}%\n"
+            info_msg += f"<b>Threat Level:</b> {observation_data.get('threat_level', 'Unknown')}\n"
+            
+            if observation_data.get('amount'):
+                info_msg += f"<b>Quantity:</b> {observation_data.get('amount')}\n"
+            
+            info_msg += f"<b>Processing Method:</b> {observation_data.get('processing_method', 'Unknown')}\n"
+            info_msg += f"<b>Database ID:</b> {observation_id}"
+            
+            await query.answer()
+            await self.bot.send_message(
+                chat_id=query.message.chat_id,
+                text=info_msg,
+                parse_mode='HTML'
+            )
+            
+        except Exception as e:
+            self.logger.error(f"Error handling more info request: {e}")
+            await query.answer("Error retrieving information. Please try again.")
+    
+    async def _handle_frago_generation(self, query) -> None:
+        """Handle FRAGO generation button press"""
+        try:
+            # Parse callback data: frago_{observation_id}_{original_chat_id}
+            parts = query.data.split("_")
+            if len(parts) < 3:
+                await query.answer("Invalid request format.")
+                return
+                
+            observation_id = parts[1]
+            original_chat_id = parts[2]
+            
+            # Get observation data
+            observation_data = await self._get_observation_by_id(observation_id)
+            
+            if not observation_data:
+                await query.answer("Observation not found.")
+                return
+            
+            await query.answer("Generating FRAGO draft...")
+            
+            # Generate FRAGO using AI with observation and uploaded documents
+            frago_draft = await self._generate_frago_draft(observation_data)
+            
+            # Send FRAGO draft
+            frago_msg = f"📋 <b>FRAGO DRAFT - Based on Entry {observation_id}</b>\n\n"
+            frago_msg += frago_draft
+            frago_msg += f"\n\n<i>Generated from observation: {observation_data.get('what', 'Unknown')}</i>"
+            
+            await self.bot.send_message(
+                chat_id=query.message.chat_id,
+                text=frago_msg,
+                parse_mode='HTML'
+            )
+            
+        except Exception as e:
+            self.logger.error(f"Error handling FRAGO generation: {e}")
+            await query.answer("Error generating FRAGO. Please try again.")
+    
+    async def _get_observation_by_id(self, observation_id: str) -> dict:
+        """Get observation data by ID from database"""
+        try:
+            # This would query the DefHack database for the observation
+            # For now, return a placeholder - this needs to be implemented
+            # with actual database query logic
+            
+            # TODO: Implement actual database query
+            return {
+                'id': observation_id,
+                'what': 'Sample observation',
+                'original_message': 'Sample original message',
+                'processing_method': 'text_llm',
+                'time': 'Unknown',
+                'unit': 'Unknown'
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Error retrieving observation {observation_id}: {e}")
+            return None
+    
+    async def _generate_frago_draft(self, observation_data: dict) -> str:
+        """Generate FRAGO draft using AI and uploaded documents"""
+        try:
+            # This would use OpenAI to generate a FRAGO based on:
+            # 1. The observation data
+            # 2. Uploaded tactical documents
+            # 3. Standard FRAGO format
+            
+            # TODO: Implement AI-powered FRAGO generation
+            frago_template = f"""<b>FRAGMENTARY ORDER (FRAGO)</b>
+
+<b>1. SITUATION:</b>
+Enemy: {observation_data.get('what', 'Unknown threat observed')}
+Location: {observation_data.get('mgrs', 'Unknown')}
+Time: {observation_data.get('time', 'Unknown')}
+
+<b>2. MISSION:</b>
+[COMMANDER TO COMPLETE - Based on threat assessment]
+
+<b>3. EXECUTION:</b>
+a. Concept of Operations: Assess and respond to identified threat
+b. Tasks to Subordinate Units:
+   - Recon: Verify threat location and composition
+   - Security: Establish overwatch positions
+   - Command: Maintain communications
+
+<b>4. LOGISTICS:</b>
+[AS REQUIRED]
+
+<b>5. COMMAND AND SIGNAL:</b>
+Report all findings via standard channels.
+
+<b>Source:</b> Observation Entry {observation_data.get('id', 'Unknown')}
+<b>Confidence:</b> {observation_data.get('confidence', 'Unknown')}%"""
+
+            return frago_template
+            
+        except Exception as e:
+            self.logger.error(f"Error generating FRAGO draft: {e}")
+            return "Error generating FRAGO draft. Please create manually."
 
 # Global instance for easy access
 leader_notification_system = None

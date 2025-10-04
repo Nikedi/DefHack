@@ -429,9 +429,18 @@ Use `/register` to begin the registration process.
     async def _handle_callback_query(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle inline keyboard callbacks"""
         query = update.callback_query
-        await query.answer()
         
         user_id = query.from_user.id
+        
+        # Route observation action buttons to leader notification system
+        if query.data.startswith(("more_info_", "frago_", "frago_req_", "no_action_", "details_")):
+            if self.leader_notifications:
+                await self.leader_notifications.handle_frago_request(update, context)
+            else:
+                await query.answer("Service temporarily unavailable.")
+            return
+        
+        await query.answer()
         
         # Handle role selection during registration
         if query.data.startswith("role_"):
