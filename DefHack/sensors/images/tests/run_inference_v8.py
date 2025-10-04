@@ -42,13 +42,13 @@ def parse_args(argv: List[str]) -> argparse.Namespace:
     parser.add_argument(
         "--image-dir",
         type=Path,
-        default=Path("src/img"),
+        default=Path("DefHack/sensors/images/current_image"),
         help="Directory containing images to process.",
     )
     parser.add_argument(
         "--output-dir",
         type=Path,
-        default=Path("src/predictions_v8"),
+        default=Path("DefHack/sensors/images/predictions_v8"),
         help="Directory where annotated images will be written.",
     )
     parser.add_argument(
