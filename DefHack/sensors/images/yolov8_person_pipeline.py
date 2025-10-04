@@ -36,15 +36,26 @@ _CLIP_COMPONENTS: Dict[Tuple[str, str], Tuple[torch.nn.Module, Callable, Callabl
 _CORPUS_CACHE: Dict[Tuple[str, float, str, str], Tuple[List[str], Optional[torch.Tensor]]] = {}
 
 
-TARGET_LABELS = {
-"person", 
-"car,"
-"truck",
-"bus,"
-"train",
-"airplane",
-"boat",
-"motorcycle",}
+_DEFAULT_TARGET_LABELS = {
+    "person",
+    "bicycle",
+    "car",
+    "motorcycle",
+    "bus",
+    "train",
+    "truck",
+    "boat",
+    "airplane",
+}
+
+if sensor_settings is not None:
+    configured_labels = getattr(getattr(sensor_settings, "settings", None), "labels", None)
+    if configured_labels:
+        TARGET_LABELS = set(configured_labels)
+    else:
+        TARGET_LABELS = _DEFAULT_TARGET_LABELS
+else:
+    TARGET_LABELS = _DEFAULT_TARGET_LABELS
 
 
 def _resolve_device(device: Optional[str] = None) -> str:
@@ -330,7 +341,7 @@ class Yolov8PersonCaptionSchema(SensorSchema):
     """Schema for a YOLOv8 target detection (person or car) augmented with CLIP retrieval."""
 
     DEFAULT_TYPE = "object"
-    DEFAULT_UNIT = "count"
+    DEFAULT_UNIT = "CamBot"
     DEFAULT_WEIGHTS = "yolov11n.pt"
     DEFAULT_CAPTION_MODEL = "MobileCLIP-S1::datacompdr"
 
@@ -387,7 +398,7 @@ class Yolov8PersonCaptionSchema(SensorSchema):
         description = what or self.caption or self.Type
         return super().to_sensor_reading(
             mgrs=canonical_mgrs,
-            what=description,
+            what="TACTICAL:"+description,
             sensor_id=sensor_id,
             observer_signature=observer_signature,
             amount=amount if amount is not None else 1.0,
