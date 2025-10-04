@@ -29,7 +29,7 @@ class DefHackDatabaseInspector:
         query = """
         SELECT time, mgrs, what, amount, confidence, sensor_id, unit, observer_signature, received_at
         FROM sensor_reading 
-        ORDER BY time DESC
+        ORDER BY time ASC
         """
         
         rows = await self.conn.fetch(query)
@@ -50,7 +50,7 @@ class DefHackDatabaseInspector:
         SELECT id, title, version, object_key, checksum, source_type, lang, 
                published_at, origin, adversary, created_at
         FROM intel_doc 
-        ORDER BY created_at DESC
+        ORDER BY created_at ASC
         """
         
         rows = await self.conn.fetch(query)

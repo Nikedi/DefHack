@@ -471,16 +471,16 @@ class DefHackIntegratedSystem:
             
             location = update.message.location
             
-            # Convert to MGRS if possible
-            mgrs_coords = None
+            # Convert to MGRS using the utility function
             try:
-                import mgrs
-                m = mgrs.MGRS()
-                mgrs_coords = m.toMGRS(location.latitude, location.longitude)
-                self.logger.info(f"📍 Location converted to MGRS: {mgrs_coords}")
-            except ImportError:
-                self.logger.warning("MGRS library not available, using lat/lon")
-                mgrs_coords = f"{location.latitude:.6f},{location.longitude:.6f}"
+                from .utils import to_mgrs
+                mgrs_coords = to_mgrs(location.latitude, location.longitude)
+                if mgrs_coords == "UNKNOWN":
+                    # Fallback to lat/lon if conversion fails
+                    mgrs_coords = f"{location.latitude:.6f},{location.longitude:.6f}"
+                    self.logger.warning("MGRS conversion returned UNKNOWN, using lat/lon")
+                else:
+                    self.logger.info(f"📍 Location converted to MGRS: {mgrs_coords}")
             except Exception as e:
                 self.logger.error(f"MGRS conversion failed: {e}")
                 mgrs_coords = f"{location.latitude:.6f},{location.longitude:.6f}"
