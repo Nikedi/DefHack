@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from DefHack.__main__ import _canonicalise_payload, _prepare_payloads
+from DefHack.__main__ import _canonicalise_payload, _deliver_readings, _prepare_payloads
 from DefHack.sensors.SensorSchema import SensorObservationIn
 
 
@@ -88,3 +88,36 @@ def test_canonicalise_payload_clamps_confidence_and_fills_unknowns():
 	assert structured["sensor_id"] == "UNKNOWN"
 	assert structured["observer_signature"] == "UNKNOWN"
 	assert structured["unit"] == "Alpha"
+
+
+def test_deliver_readings_debug_prints_payload(tmp_path, capsys):
+	initial_payload = {
+		"time": "2025-10-04T16:30:00Z",
+		"mgrs": "35vl g8472571866",
+		"what": "TACTICAL:infantry squad",
+		"confidence": 70,
+		"sensor_id": "SENSOR-1",
+		"observer_signature": "Watcher",
+		"amount": 2,
+	}
+	posted: list[dict[str, object]] = []
+
+	def fake_poster(payload: dict[str, object], *, url: str, api_key: str | None, timeout: float) -> bool:
+		posted.append(payload)
+		return True
+
+	backlog_path = tmp_path / "backlog.json"
+	_deliver_readings(
+		[initial_payload],
+		backlog_path=backlog_path,
+		url="http://example.test",
+		api_key=None,
+		timeout=1.0,
+		debug_payloads=True,
+		poster=fake_poster,
+	)
+
+	stdout = capsys.readouterr().out
+	assert "DEBUG payload ->" in stdout
+	assert '"sensor_id": "SENSOR-1"' in stdout
+	assert posted == [_canonicalise_payload(initial_payload)]

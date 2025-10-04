@@ -55,6 +55,7 @@ class AppConfig:
 	caption_corpus: Optional[Path]
 	image_history: int
 	http_timeout: float
+	debug_payloads: bool
 
 
 def parse_args(argv: Sequence[str]) -> AppConfig:
@@ -96,6 +97,7 @@ def parse_args(argv: Sequence[str]) -> AppConfig:
 	parser.add_argument("--caption-corpus", type=Path, default=None, help="Optional phrase corpus for CLIP retrieval")
 	parser.add_argument("--image-history", type=int, default=5, help="How many captured images to retain on disk (default: 5)")
 	parser.add_argument("--http-timeout", type=float, default=5.0, help="Seconds before HTTP POST attempts time out (default: 5)")
+	parser.add_argument("--debug-payloads", action="store_true", help="Print payload JSON before posting to the API")
 	args = parser.parse_args(argv)
 
 	return AppConfig(
@@ -120,6 +122,7 @@ def parse_args(argv: Sequence[str]) -> AppConfig:
 		caption_corpus=args.caption_corpus.resolve() if args.caption_corpus else None,
 		image_history=max(1, args.image_history),
 		http_timeout=max(1.0, args.http_timeout),
+		debug_payloads=bool(args.debug_payloads),
 	)
 
 
@@ -273,6 +276,8 @@ def _deliver_readings(
 	url: str,
 	api_key: Optional[str],
 	timeout: float,
+	debug_payloads: bool = False,
+	poster=_post_payload,
 ) -> None:
 	if not payloads and not backlog_path.exists():
 		return
@@ -284,7 +289,9 @@ def _deliver_readings(
 	delivered = 0
 
 	for payload in backlog_entries:
-		if _post_payload(payload, url=url, api_key=api_key, timeout=timeout):
+		if debug_payloads:
+			print("DEBUG payload ->", json.dumps(payload, indent=2, sort_keys=True, ensure_ascii=False))
+		if poster(payload, url=url, api_key=api_key, timeout=timeout):
 			delivered += 1
 			print(f"Delivered reading: {payload.get('what')} @ {payload.get('time')}")
 		else:
@@ -414,6 +421,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 					url=config.api_url,
 					api_key=config.api_key,
 					timeout=config.http_timeout,
+					debug_payloads=config.debug_payloads,
 				)
 			_prune_captures(config.save_folder, keep=config.image_history)
 
