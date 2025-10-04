@@ -155,9 +155,6 @@ def _format_mgrs(value: Optional[str]) -> str:
 def _normalise_what(value: Optional[str]) -> str:
 	if not value:
 		return ""
-	prefix = "TACTICAL:"
-	if value.startswith(prefix):
-		return value[len(prefix):]
 	return value
 
 
