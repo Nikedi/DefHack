@@ -17,7 +17,8 @@ from telegram.ext import (
 from .config import TELEGRAM_BOT_TOKEN, configure_logging
 from .handlers import create_direct_handlers, create_group_handlers
 from .observation_repository import ObservationRepository
-from .services import FragoGenerator, GeminiAnalyzer
+from .services import FragoGenerator
+from .services.openai_analyzer import OpenAIAnalyzer
 
 
 async def _start_group(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -40,7 +41,7 @@ def build_app(token: Optional[str] = None) -> Application:
 
     app = ApplicationBuilder().token(auth_token).build()
 
-    analyzer = GeminiAnalyzer(logger)
+    analyzer = OpenAIAnalyzer(logger)
     analyzer.set_application(app)
 
     observation_repo = ObservationRepository()

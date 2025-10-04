@@ -9,7 +9,9 @@ from dotenv import load_dotenv
 load_dotenv()
 
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
+OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
+OPENAI_MODEL_NAME = os.environ.get("OPENAI_MODEL_NAME", "gpt-4o-mini")
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")  # Keep for backwards compatibility
 GEMINI_MODEL_NAME = os.environ.get("GEMINI_MODEL_NAME", "gemini-flash-latest")
 BATCH_WINDOW_SECONDS = int(os.environ.get("BATCH_WINDOW_SECONDS", "20"))
 LOG_LEVEL = os.environ.get("LOG_LEVEL", "WARNING").upper()

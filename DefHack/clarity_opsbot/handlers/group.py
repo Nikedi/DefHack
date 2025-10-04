@@ -9,11 +9,11 @@ from typing import Any, Dict, List
 from telegram import Update
 from telegram.ext import ContextTypes, MessageHandler, filters
 
-from ..services.gemini import GeminiAnalyzer
+from ..services.openai_analyzer import OpenAIAnalyzer
 from ..utils import format_log, get_observer_signature, get_unit, to_mgrs, utc_iso
 
 
-def create_group_handlers(analyzer: GeminiAnalyzer, logger: logging.Logger) -> List[MessageHandler]:
+def create_group_handlers(analyzer: OpenAIAnalyzer, logger: logging.Logger) -> List[MessageHandler]:
     async def on_group_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         msg = update.effective_message
         if not msg or not msg.text or msg.from_user is None or msg.from_user.is_bot:
