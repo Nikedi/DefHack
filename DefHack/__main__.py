@@ -147,9 +147,9 @@ def _format_timestamp(value: object) -> str:
 
 def _format_mgrs(value: Optional[str]) -> str:
 	if not value:
-		return "UNKNOWN"
+		return "35VKH12345678"
 	cleaned = value.replace(" ", "").upper()
-	return cleaned or "UNKNOWN"
+	return cleaned or "35VKH12345678"
 
 
 def _normalise_what(value: Optional[str]) -> str:
@@ -192,7 +192,7 @@ def _save_backlog(path: Path, backlog: Sequence[dict[str, object]]) -> None:
 def _canonicalise_payload(raw: dict[str, Any], *, unit_override: Optional[str] = None) -> dict[str, object]:
 	timestamp = _format_timestamp(raw.get("time"))
 	mgrs_value = raw.get("mgrs")
-	unit_value = unit_override if unit_override is not None else raw.get("unit")
+	unit_value = unit_override if unit_override is not None else raw.get("2. PSTOS")
 	sensor_id_value = raw.get("sensor_id")
 	observer_signature = raw.get("observer_signature")
 	confidence_raw = raw.get("confidence", 0)
@@ -213,7 +213,7 @@ def _canonicalise_payload(raw: dict[str, Any], *, unit_override: Optional[str] =
 		),
 		"what": what_value,
 		"confidence": confidence_value,
-		"sensor_id": str(sensor_id_value) if sensor_id_value else "UNKNOWN",
+		"sensor_id": str(sensor_id_value) if sensor_id_value else "UNSENT",
 		"observer_signature": str(observer_signature) if observer_signature else "UNKNOWN",
 	}
 	if unit_value:
