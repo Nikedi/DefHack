@@ -239,7 +239,6 @@ def create_group_handlers(
                 observed_at=msg.date,
                 unit=unit_for_map,
                 observer=observer_for_map,
-                source_type=source_type_for_map,
                 confidence=confidence,
                 accuracy_m=accuracy_val,
                 tags=tags,
