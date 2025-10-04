@@ -1,0 +1,232 @@
+@import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap');
+
+:root{
+  /* Neutral gray theme */
+  --mil-dark: #161819; /* replaced deep green */
+  --mil-olive: #222526; /* repurposed as neutral surface */
+  --mil-olive2: #1d1f20; /* base surface */
+  --mil-sand: #e2e5e7; /* primary text */ 
+  --mil-accent: #3d82f6; /* action / info */
+  --mil-alert: #dc2626; /* alert */
+  --mil-muted: #8b9297; /* secondary text */
+  --mil-border: #2b2f31; /* borders */
+  --mil-surface-alt: #1f2223; /* panels */
+  --mil-surface-elev: #242728; /* elevated */
+  --mil-desktop-sidebar: 320px;
+  --mil-map-height-desktop: 560px;
+  --mil-summary-height: 96px;
+}
+
+/* --- Base Layout Simplification --- */
+body {
+  font-family: "Share Tech Mono", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Arial;
+  background: radial-gradient(circle at 25% 15%, #1f2223 0%, #161819 55%) fixed;
+  color: var(--mil-sand);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+body::before, body::after { background:none; }
+
+/* Topbar simplified */
+.mil-topbar {
+  background: var(--mil-surface-elev);
+  border-bottom: 1px solid var(--mil-border);
+  box-shadow: 0 2px 4px rgba(0,0,0,0.35);
+  padding: 0.6rem 1rem;
+  display:flex;
+  align-items:center;
+  gap:1rem;
+  width:97vw;
+}
+
+/* small radar animation */
+@keyframes radar-sweep {
+  0% { transform: rotate(0deg) translateY(0); opacity: 0.9; }
+  100% { transform: rotate(360deg) translateY(0); opacity: 0.15; }
+}
+.mil-radar {
+  width:28px; height:28px; border-radius:50%;
+  background: radial-gradient(circle at 30% 30%, rgba(197,154,69,0.12), transparent 40%);
+  border: 1px solid rgba(197,154,69,0.08);
+  box-shadow: 0 0 10px rgba(197,154,69,0.02) inset;
+  position:relative;
+  overflow:hidden;
+}
+.mil-radar::after {
+  content:"";
+  position:absolute; inset:0; border-radius:50%;
+  background: conic-gradient(rgba(197,154,69,0.06), transparent 40%);
+  animation: radar-sweep 3.5s linear infinite;
+}
+
+/* Panels flattened */
+.mil-panel {
+  background: var(--mil-surface-alt);
+  border: 1px solid var(--mil-border);
+  box-shadow: 0 4px 10px rgba(0,0,0,0.35);
+}
+
+/* Remove hover lift; keep subtle focus */
+.mil-interactive:hover { box-shadow: 0 0 0 1px var(--mil-accent); transform:none; }
+
+/* Buttons neutral */
+.btn-mil {
+  background: linear-gradient(180deg, var(--mil-surface-elev), var(--mil-surface-alt));
+  border: 1px solid var(--mil-border);
+  color: var(--mil-sand);
+  font-weight:600;
+  letter-spacing:.25px;
+  padding: 0.45rem 0.85rem;
+  border-radius: 6px;
+  transition: transform .12s ease, box-shadow .12s ease;
+}
+.btn-mil:hover { background: var(--mil-surface-elev); }
+.btn-mil:active { transform:none; background: #1b1d1e; }
+
+/* Status dots recolored to theme */
+.status-dot { width:10px; height:10px; border-radius:50%; display:inline-block; margin-right:0.45rem; }
+.status-ok { background:#15a34a; box-shadow:none; }
+.status-warn { background:#d97706; }
+.status-alert { background:#dc2626; }
+
+/* blinking */
+@keyframes blink { 0%,40%{opacity:1} 60%{opacity:0.12} 100%{opacity:1} }
+.blink { animation: blink 1.6s linear infinite; }
+
+/* scanline overlay */
+.scanline {
+  position:relative;
+  overflow:hidden;
+}
+.scanline::after {
+  content:"";
+  position:absolute; left:-30%; top:0; width:60%; height:100%;
+  background: linear-gradient(90deg, rgba(255,255,255,0.02), rgba(255,255,255,0.06), rgba(255,255,255,0.02));
+  transform: skewX(-20deg);
+  animation: scan 6s linear infinite;
+  pointer-events:none;
+  mix-blend-mode:overlay;
+  opacity:0.03;
+}
+
+/* Table polishing */
+.mil-table th { background: var(--mil-surface-elev); border-bottom:1px solid var(--mil-border); font-size:0.75rem; letter-spacing:.05em; }
+.mil-table td { border-bottom:1px solid var(--mil-border); font-size:0.8rem; }
+.mil-table tr:last-child td { border-bottom:none; }
+.mil-table-wrap {
+  max-height: 380px;
+  overflow: auto;
+  background: var(--mil-surface-alt);
+}
+.mil-table-wrap::-webkit-scrollbar { width:10px; }
+.mil-table-wrap::-webkit-scrollbar-track { background: var(--mil-surface-alt); }
+.mil-table-wrap::-webkit-scrollbar-thumb { background: #2f3335; border-radius:6px; }
+
+/* utility small text */
+.mil-muted { color: var(--mil-muted); font-size:0.85rem; }
+
+/* Desktop-first container: center content and target 1920px wide workspace */
+.mil-root {
+  max-width: 100%;
+  width: 100%;
+  margin: 0 auto;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  font-size: 16px;
+  padding: 0 0 2rem 0;
+}
+
+/* Make the main area a two-column layout: fixed sidebar + flexible main */
+.mil-main {
+  display: flex;
+  gap: 1rem;
+  align-items: stretch;
+  flex: 1 1 auto;
+}
+
+/* Sidebar fixed width for desktop */
+.mil-sidebar {
+  width: var(--mil-desktop-sidebar);
+  min-width: var(--mil-desktop-sidebar);
+  padding: 1rem;
+  box-sizing: border-box;
+}
+
+/* Main content fills rest */
+.mil-content {
+  flex: 1 1 auto;
+  padding: 1rem;
+  overflow: auto;
+  max-width: 1920px;
+  margin: 0 auto;
+}
+
+/* New 2x2 summary grid */
+.summary-cards-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-rows: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+.summary-card {
+  height: 120px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  background: var(--mil-surface-alt);
+  border:1px solid var(--mil-border);
+  box-shadow: none;
+}
+@media (max-width: 960px) {
+  .summary-cards-grid {
+    grid-template-columns: 1fr;
+    grid-template-rows: none;
+  }
+  .summary-card {
+    height: auto;
+  }
+}
+
+/* Remove old mil-summary-grid usage (kept for backward compatibility minimal height) */
+.mil-summary-grid {
+  display: none;
+}
+
+/* Map / feed large tile for desktop */
+.mil-map-large {
+  height: var(--mil-map-height-desktop);
+  width: 100%;
+  border-radius: 6px;
+  overflow: hidden;
+  background: #1b1d1e;
+  border:1px solid var(--mil-border);
+}
+
+/* Alerts column aligned vertically */
+.mil-alerts {
+  display:flex;
+  flex-direction:column;
+  gap:0.75rem;
+  background: var(--mil-surface-alt);
+  border:1px solid var(--mil-border);
+}
+
+/* Slightly larger topbar font for desktop */
+.mil-topbar .text-lg { 
+  font-size: 1.05rem; }
+
+/* Hover / focus adjustments for desktop pointer */
+@media (hover: hover) and (pointer: fine) {
+  .btn-mil:hover { background: var(--mil-surface-elev); }
+}
+
+/* Responsive fallback: on small screens revert to single column */
+@media (max-width: 1023px) {
+  .mil-root { padding: 0; }
+  .mil-main { flex-direction: column; }
+  .mil-sidebar { width: 100%; min-width: unset; }
+  .mil-summary-grid { grid-template-columns: repeat(2, 1fr); }
+  .mil-map-large { height: 320px; }
+  .mil-table-wrap { max-height: 240px; background: var(--mil-surface-alt); }
+}
