@@ -18,6 +18,7 @@ from telegram.ext import (
 from .enhanced_processor import EnhancedMessageProcessor
 from .leader_notifications import LeaderNotificationSystem
 from .user_roles import user_manager, UserRole
+from .services.speech import SpeechTranscriber
 
 # Configure logging
 logging.basicConfig(
@@ -34,6 +35,7 @@ class DefHackIntegratedSystem:
         self.logger = logging.getLogger(__name__)
         self.message_processor = EnhancedMessageProcessor(self.logger)
         self.leader_notifications = None  # Will be initialized after app is created
+        self.speech_transcriber = SpeechTranscriber(self.logger)  # Initialize speech transcriber
         
         # Message clustering for combining multiple messages
         self.message_clusters: Dict[str, Dict] = {}
@@ -359,6 +361,7 @@ class DefHackIntegratedSystem:
         self.app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self._handle_message))
         self.app.add_handler(MessageHandler(filters.LOCATION, self._handle_location))
         self.app.add_handler(MessageHandler(filters.PHOTO, self._handle_photo))
+        self.app.add_handler(MessageHandler(filters.VOICE, self._handle_voice))
         
         # Callback query handler for button interactions
         self.app.add_handler(CallbackQueryHandler(self._handle_callback_query))
@@ -675,6 +678,141 @@ class DefHackIntegratedSystem:
             
         except Exception as e:
             self.logger.error(f"❌ Error handling photo: {e}")
+    
+    async def _handle_voice(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle voice messages with transcription"""
+        try:
+            msg = update.effective_message
+            if not msg or not msg.voice or msg.from_user is None or msg.from_user.is_bot:
+                return
+            
+            user_id = update.effective_user.id
+            user = user_manager.get_user(user_id)
+            
+            if not user:
+                await update.message.reply_text(
+                    "Please register first using /register command"
+                )
+                return
+            
+            # Check if speech transcriber is available
+            if not self.speech_transcriber.available:
+                self.logger.warning("Voice message ignored; transcription disabled.")
+                await msg.reply_text(
+                    "🎤 Voice transcription isn't configured; please send the observation as text.",
+                    reply_to_message_id=msg.message_id,
+                )
+                return
+            
+            self.logger.info(f"🎤 Voice message received from {user.full_name} ({user.role})")
+            
+            try:
+                # Get the voice file from Telegram
+                voice_file = await context.bot.get_file(msg.voice.file_id)
+            except Exception:
+                self.logger.exception("Failed to fetch voice file metadata from Telegram.")
+                await msg.reply_text("❌ Failed to download voice message. Please try again.")
+                return
+            
+            # Download voice file to memory
+            import io
+            buffer = io.BytesIO()
+            try:
+                await voice_file.download_to_memory(out=buffer)
+            except Exception:
+                self.logger.exception("Failed to download voice note for transcription.")
+                try:
+                    await msg.reply_text("❌ Failed to download voice message. Please try again.")
+                except Exception as reply_error:
+                    self.logger.error(f"❌ Failed to send download error reply: {reply_error}")
+                return
+            
+            # Transcribe the voice message
+            mime_type = msg.voice.mime_type or "audio/ogg"
+            try:
+                transcript = await self.speech_transcriber.transcribe(
+                    buffer.getvalue(),
+                    filename=f"voice_{msg.voice.file_unique_id}.ogg",
+                    mime_type=mime_type,
+                )
+            except Exception as transcription_error:
+                self.logger.error(f"❌ Transcription failed: {transcription_error}")
+                try:
+                    await msg.reply_text(
+                        "🎤 Voice transcription service unavailable. Please try again later or send text.",
+                        reply_to_message_id=msg.message_id,
+                    )
+                except Exception as reply_error:
+                    self.logger.error(f"❌ Failed to send transcription service error reply: {reply_error}")
+                return
+            
+            if not transcript:
+                try:
+                    await msg.reply_text(
+                        "🎤 Couldn't transcribe that voice message. Please try again or send text.",
+                        reply_to_message_id=msg.message_id,
+                    )
+                except Exception as reply_error:
+                    self.logger.error(f"❌ Failed to send transcription error reply: {reply_error}")
+                return
+            
+            # Send transcribed text back
+            try:
+                await msg.reply_text(
+                    f"🎤 Transcribed voice note:\n{transcript}",
+                    reply_to_message_id=msg.message_id,
+                )
+            except Exception as reply_error:
+                self.logger.error(f"❌ Failed to send transcription reply: {reply_error}")
+                # Continue processing even if we can't send the reply
+            
+            # Process the transcribed text as a normal message
+            # Create a simulated text message to process the transcript
+            await self._process_transcribed_message(update, context, transcript)
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error handling voice message: {e}")
+            try:
+                await update.message.reply_text("❌ Error processing voice message. Please try again.")
+            except Exception as reply_error:
+                self.logger.error(f"❌ Failed to send error reply: {reply_error}")
+    
+    async def _process_transcribed_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE, transcript: str):
+        """Process transcribed voice message text through normal message handling"""
+        try:
+            # Get the message components we need
+            message = update.effective_message
+            user = update.effective_user
+            chat = update.effective_chat
+            
+            # Process the transcript through the message processor
+            cluster_key = f"{chat.id}_{user.id}"
+            
+            # Add to message cluster or process immediately
+            if cluster_key in self.message_clusters:
+                # Add to existing cluster
+                self.message_clusters[cluster_key]["messages"].append(transcript)
+                self.logger.info(f"📦 Added voice transcript to existing cluster {cluster_key}")
+            else:
+                # Create new cluster for transcribed message
+                current_time = datetime.now(timezone.utc)
+                self.message_clusters[cluster_key] = {
+                    "messages": [transcript],
+                    "timestamp": current_time,
+                    "chat_id": chat.id,
+                    "user_id": user.id,
+                    "username": user.username or user.full_name,
+                    "chat_title": chat.title or "Unknown Chat",
+                    "has_location": False,
+                    "location": None
+                }
+                self.logger.info(f"🆕 New voice transcript cluster created for {cluster_key}")
+                
+                # Process the transcribed message immediately
+                await self._process_clustered_messages(cluster_key)
+                
+        except Exception as e:
+            self.logger.error(f"❌ Error processing transcribed message: {e}")
     
     def start_bot(self):
         """Start the bot"""
