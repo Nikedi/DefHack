@@ -22,8 +22,11 @@ export default function DataTable({ data = [], onRefresh }: { data?: Observation
               <th className="p-3">Time</th>
               <th className="p-3">MGRS</th>
               <th className="p-3">What</th>
+              <th className="p-3">Amount</th>
+              <th className="p-3">Unit</th>
               <th className="p-3">Confidence</th>
               <th className="p-3">Sensor</th>
+              <th className="p-3">Observer Signature</th>
             </tr>
           </thead>
           <tbody>
@@ -35,14 +38,17 @@ export default function DataTable({ data = [], onRefresh }: { data?: Observation
                   <td className="p-3 whitespace-nowrap">{fmt(r.time)}</td>
                   <td className="p-3">{r.mgrs}</td>
                   <td className="p-3 max-w-[260px] truncate" title={r.what}>{r.what}</td>
+                  <td className="p-3">{typeof r.amount === 'number' && !Number.isNaN(r.amount) ? r.amount : (r.amount ?? '')}</td>
+                  <td className="p-3">{r.unit || ''}</td>
                   <td className="p-3">{typeof r.confidence === 'number' ? `${r.confidence}%` : ''}</td>
                   <td className="p-3">{r.sensor_id || ''}</td>
+                  <td className="p-3 max-w-[200px] truncate" title={r.observer_signature}>{r.observer_signature || ''}</td>
                 </tr>
               );
             })}
             {data.length === 0 && (
               <tr>
-                <td className="p-4 mil-muted" colSpan={6}>No observations</td>
+                <td className="p-4 mil-muted" colSpan={9}>No observations</td>
               </tr>
             )}
           </tbody>
