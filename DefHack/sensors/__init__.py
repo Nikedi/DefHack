@@ -2,7 +2,7 @@
 Sensor input processing and conversion algorithms are implemented here.
 """
 
-from .SensorSchema import SensorSchema, SensorReading
+from .SensorSchema import SensorSchema, SensorObservationIn
 from . import settings
 
-__all__ = ["SensorSchema", "SensorReading", "settings"]
+__all__ = ["SensorSchema", "SensorObservationIn", "settings"]

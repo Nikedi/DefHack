@@ -1,4 +1,4 @@
-"""YOLOv8 detection pipeline producing :class:`SensorReading` instances.
+"""YOLOv8 detection pipeline producing :class:`SensorObservationIn` instances.
 
 This module distills the standalone YOLOv8 + CLIP retrieval inference script into a
 reusable pipeline that conforms to the :class:`SensorSchema` interface. Each
@@ -7,6 +7,7 @@ converted into canonical sensor readings for downstream consumers.
 """
 from __future__ import annotations
 
+from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -19,7 +20,7 @@ from PIL import Image
 import open_clip
 from ultralytics import YOLO
 
-from ..SensorSchema import SensorReading, SensorSchema
+from ..SensorSchema import SensorObservationIn, SensorSchema
 
 try:  # pragma: no cover - optional dependency during isolated tests
     from .. import settings as sensor_settings
@@ -77,21 +78,36 @@ def _settings_overrides() -> Dict[str, str]:
     if config is None:
         return overrides
 
+    weights_override = getattr(config, "yolov8_weights", None)
+    if isinstance(weights_override, str) and weights_override.strip():
+        overrides["weights"] = weights_override.strip()
+
+    caption_model_override = getattr(config, "yolov8_caption_model", None)
+    if isinstance(caption_model_override, str) and caption_model_override.strip():
+        overrides["caption_model"] = caption_model_override.strip()
+
+    preferred_device = getattr(config, "yolov8_device", None)
+    if isinstance(preferred_device, str) and preferred_device.strip():
+        overrides["device"] = preferred_device.strip().lower()
+
     extra = getattr(config, "extra", {}) or {}
     if not isinstance(extra, dict):  # pragma: no cover - guard against incorrect usage
         return overrides
 
-    weights = extra.get("yolov8_weights")
-    if isinstance(weights, str) and weights.strip():
-        overrides["weights"] = weights.strip()
+    if "weights" not in overrides:
+        weights = extra.get("yolov8_weights")
+        if isinstance(weights, str) and weights.strip():
+            overrides["weights"] = weights.strip()
 
-    caption_model = extra.get("yolov8_caption_model")
-    if isinstance(caption_model, str) and caption_model.strip():
-        overrides["caption_model"] = caption_model.strip()
+    if "caption_model" not in overrides:
+        caption_model = extra.get("yolov8_caption_model")
+        if isinstance(caption_model, str) and caption_model.strip():
+            overrides["caption_model"] = caption_model.strip()
 
-    preferred_device = extra.get("yolov8_device")
-    if isinstance(preferred_device, str) and preferred_device.strip():
-        overrides["device"] = preferred_device.strip().lower()
+    if "device" not in overrides:
+        device_extra = extra.get("yolov8_device")
+        if isinstance(device_extra, str) and device_extra.strip():
+            overrides["device"] = device_extra.strip().lower()
 
     return overrides
 
@@ -360,12 +376,13 @@ class Yolov8PersonCaptionSchema(SensorSchema):
         self,
         *,
         mgrs: str,
-        sensor_id: str,
+        sensor_id: Optional[str],
         observer_signature: str,
         what: Optional[str] = None,
         amount: Optional[float] = None,
         unit: Optional[str] = None,
-    ) -> SensorReading:
+        original_message: Optional[str] = None,
+    ) -> SensorObservationIn:
         canonical_mgrs = mgrs.replace(" ", "").upper() or self.Place
         description = what or self.caption or self.Type
         return super().to_sensor_reading(
@@ -375,6 +392,7 @@ class Yolov8PersonCaptionSchema(SensorSchema):
             observer_signature=observer_signature,
             amount=amount if amount is not None else 1.0,
             unit=unit or self.DEFAULT_UNIT,
+            original_message=original_message,
         )
 
     # ------------------------------------------------------------------
@@ -396,7 +414,7 @@ class Yolov8PersonCaptionSchema(SensorSchema):
         device: Optional[str] = None,
         caption_corpus: Optional[Path] = Path("src/bag_of_words.txt"),
         caption_top_k: int = 1,
-    ) -> Tuple[List[SensorReading], List["Yolov8PersonCaptionSchema"], Optional[object]]:
+    ) -> Tuple[List[SensorObservationIn], List["Yolov8PersonCaptionSchema"], Optional[object]]:
         """Run inference on an image and generate schema and sensor readings.
 
         Returns a tuple of ``(sensor_readings, schema_objects, raw_result)`` where
@@ -450,7 +468,7 @@ class Yolov8PersonCaptionSchema(SensorSchema):
             produced_by += f"+CLIP({caption_model})"
 
         schema_objects: List[Yolov8PersonCaptionSchema] = []
-        sensor_readings: List[SensorReading] = []
+        detections_by_label: Dict[str, List[Yolov8PersonCaptionSchema]] = defaultdict(list)
 
         for idx, (bbox, conf_score, label, _cls_id) in enumerate(detections):
             caption_text = captions[idx] if idx < len(captions) else None
@@ -469,11 +487,24 @@ class Yolov8PersonCaptionSchema(SensorSchema):
                 detection_index=idx + 1,
             )
             schema_objects.append(schema)
+            detections_by_label[schema.label].append(schema)
 
-            reading = schema.to_sensor_reading(
+        sensor_readings: List[SensorObservationIn] = []
+        for label, label_schemas in detections_by_label.items():
+            count = len(label_schemas)
+            if count == 0:
+                continue
+            avg_confidence = sum(s.detection_confidence for s in label_schemas) / count
+            reading = SensorObservationIn(
+                time=timestamp,
                 mgrs=place_value,
+                what=label,
+                amount=float(count),
+                confidence=int(round(max(0.0, min(avg_confidence * 100.0, 100.0)))),
                 sensor_id=sensor_id,
+                unit=cls.DEFAULT_UNIT,
                 observer_signature=observer_signature,
+                original_message=None,
             )
             sensor_readings.append(reading)
 

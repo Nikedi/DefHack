@@ -3,22 +3,44 @@ from datetime import datetime
 from pydantic import BaseModel, Field
 
 
-class SensorReading(BaseModel):
-    time: datetime
-    mgrs: str = Field(description="Single MGRS string, uppercase, no spaces")
-    what: str
-    amount: float | None = None
-    confidence: int = Field(ge=0, le=100)
-    sensor_id: str
-    unit: str | None = None
-    observer_signature: str = Field(min_length=3, description="e.g., 'Sensor 1, Team A'")
+class SensorObservationIn(BaseModel):
+    """Input schema for tactical sensor observations from the field"""
+
+    time: datetime = Field(description="When the observation was made (ISO 8601)")
+    mgrs: str | None = Field(
+        None,
+        description="Location in MGRS format (e.g., '35VLG8472571866') or null if unknown",
+    )
+    what: str = Field(description="What was observed (e.g., 'T-72 Tank', 'Infantry Squad')")
+    amount: float | None = Field(None, description="Number/quantity observed")
+    confidence: int = Field(
+        ge=0,
+        le=100,
+        description="Observer confidence level (0-100)",
+    )
+    sensor_id: str | None = Field(
+        None,
+        description="ID of sensor/observer equipment or null for human observers",
+    )
+    unit: str | None = Field(
+        None,
+        description="Observing unit (e.g., 'Alpha Company, 2nd Platoon')",
+    )
+    observer_signature: str = Field(
+        min_length=3,
+        description="Observer identification (e.g., 'CallSign' or 'FirstnameLastname')",
+    )
+    original_message: str | None = Field(
+        None,
+        description="Original message text or null for sensor data without text",
+    )
 
 
 class SensorSchema:
     """Superclass for schemas produced from arbitrary sensor input.
 
     Provides a factory for algorithms that convert sensor input into schema instances
-    and a helper to build canonical :class:`SensorReading` objects.
+    and a helper to build canonical :class:`SensorObservationIn` objects.
     """
 
     # Registry for conversion algorithms: {algorithm_name: callable}
@@ -54,15 +76,16 @@ class SensorSchema:
     def to_sensor_reading(
         self,
         *,
-        mgrs: str,
+        mgrs: str | None,
         what: str,
-        sensor_id: str,
+        sensor_id: str | None,
         observer_signature: str,
         amount: float | None = None,
         unit: str | None = None,
-    ) -> SensorReading:
-        """Convert this schema instance into a :class:`SensorReading`."""
-        return SensorReading(
+        original_message: str | None = None,
+    ) -> SensorObservationIn:
+        """Convert this schema instance into a :class:`SensorObservationIn`."""
+        return SensorObservationIn(
             time=self.Timestamp,
             mgrs=mgrs,
             what=what,
@@ -71,9 +94,10 @@ class SensorSchema:
             sensor_id=sensor_id,
             unit=unit,
             observer_signature=observer_signature,
+            original_message=original_message,
         )
 
-    def to_dict(self, **kwargs) -> SensorReading:
-        """Return a :class:`SensorReading` representation of this schema."""
+    def to_dict(self, **kwargs) -> SensorObservationIn:
+        """Return a :class:`SensorObservationIn` representation of this schema."""
         return self.to_sensor_reading(**kwargs)
 	

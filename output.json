@@ -1,0 +1,79 @@
+[
+  {
+    "time": "2025-10-04 09:49:06.942620+00:00",
+    "mgrs": "UNKNOWN",
+    "what": "person",
+    "amount": 3.0,
+    "confidence": 75,
+    "sensor_id": "YOLOv8-Pipeline",
+    "unit": "count",
+    "observer_signature": "YOLOv8 Inference",
+    "original_message": null
+  },
+  {
+    "time": "2025-10-04 09:49:07.466354+00:00",
+    "mgrs": "UNKNOWN",
+    "what": "person",
+    "amount": 5.0,
+    "confidence": 55,
+    "sensor_id": "YOLOv8-Pipeline",
+    "unit": "count",
+    "observer_signature": "YOLOv8 Inference",
+    "original_message": null
+  },
+  {
+    "time": "2025-10-04 09:49:07.466354+00:00",
+    "mgrs": "UNKNOWN",
+    "what": "airplane",
+    "amount": 1.0,
+    "confidence": 46,
+    "sensor_id": "YOLOv8-Pipeline",
+    "unit": "count",
+    "observer_signature": "YOLOv8 Inference",
+    "original_message": null
+  },
+  {
+    "time": "2025-10-04 09:49:08.001424+00:00",
+    "mgrs": "UNKNOWN",
+    "what": "person",
+    "amount": 6.0,
+    "confidence": 43,
+    "sensor_id": "YOLOv8-Pipeline",
+    "unit": "count",
+    "observer_signature": "YOLOv8 Inference",
+    "original_message": null
+  },
+  {
+    "time": "2025-10-04 09:49:08.358446+00:00",
+    "mgrs": "UNKNOWN",
+    "what": "person",
+    "amount": 3.0,
+    "confidence": 81,
+    "sensor_id": "YOLOv8-Pipeline",
+    "unit": "count",
+    "observer_signature": "YOLOv8 Inference",
+    "original_message": null
+  },
+  {
+    "time": "2025-10-04 09:49:09.052623+00:00",
+    "mgrs": "UNKNOWN",
+    "what": "person",
+    "amount": 9.0,
+    "confidence": 52,
+    "sensor_id": "YOLOv8-Pipeline",
+    "unit": "count",
+    "observer_signature": "YOLOv8 Inference",
+    "original_message": null
+  },
+  {
+    "time": "2025-10-04 09:49:09.419239+00:00",
+    "mgrs": "UNKNOWN",
+    "what": "person",
+    "amount": 3.0,
+    "confidence": 48,
+    "sensor_id": "YOLOv8-Pipeline",
+    "unit": "count",
+    "observer_signature": "YOLOv8 Inference",
+    "original_message": null
+  }
+]

@@ -114,20 +114,20 @@ def parse_args(argv: List[str]) -> argparse.Namespace:
         "--sensor-id",
         type=str,
         default="YOLOv8-Pipeline",
-        help="Sensor identifier to embed in generated SensorReading objects.",
+        help="Sensor identifier to embed in generated SensorObservationIn objects.",
     )
     parser.add_argument(
         "--observer",
         dest="observer_signature",
         type=str,
         default="YOLOv8 Inference",
-        help="Observer signature used for SensorReading output.",
+    help="Observer signature used for SensorObservationIn output.",
     )
     parser.add_argument(
         "--readings-json",
         type=Path,
         default=None,
-        help="Optional path to write generated SensorReading objects as JSON.",
+    help="Optional path to write generated SensorObservationIn objects as JSON.",
     )
     return parser.parse_args(argv)
 

@@ -18,7 +18,7 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
 		prog="python -m DefHack.sensors.images",
 		description=(
 			"Run the YOLOv8 person/vehicle detection pipeline on one or more images and "
-			"emit SensorReading objects."
+			"emit SensorObservationIn objects."
 		),
 	)
 	parser.add_argument(
@@ -46,12 +46,12 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
 	parser.add_argument(
 		"--sensor-id",
 		default="YOLOv8-Pipeline",
-		help="Sensor identifier embedded in the SensorReading outputs.",
+	help="Sensor identifier embedded in the SensorObservationIn outputs.",
 	)
 	parser.add_argument(
 		"--observer",
 		default="YOLOv8 Inference",
-		help="Observer signature embedded in the SensorReading outputs.",
+	help="Observer signature embedded in the SensorObservationIn outputs.",
 	)
 	parser.add_argument(
 		"--device",
@@ -86,7 +86,7 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
 	parser.add_argument(
 		"--readings-json",
 		type=Path,
-		help="Optional path to write SensorReading objects as JSON.",
+	help="Optional path to write SensorObservationIn objects as JSON.",
 	)
 	parser.add_argument(
 		"--no-summary",

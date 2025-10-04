@@ -36,17 +36,31 @@ class BackendSettings:
         reserved for future use.
     segmentation_model:
         Optional model identifier passed to the segmentation backend.
+    yolov8_weights:
+        Optional override for the YOLOv8 weights file used by the person/vehicle
+        pipeline. ``None`` falls back to the pipeline defaults.
+    yolov8_caption_model:
+        Optional override for the CLIP retrieval model specification used to
+        generate captions for detections.
+    yolov8_device:
+        Preferred compute device for the YOLOv8 pipeline (e.g. ``"cuda"`` or
+        ``"cpu"``). ``None`` defers to automatic device selection.
     """
 
     detection_backend: DetectionBackend = "tinyyolo"
     detection_model: str = "yolov5n"
     segmentation_backend: SegmentationBackend = "sam"
     segmentation_model: str = "mobilev3large"
+    yolov8_weights: str | None = None
+    yolov8_caption_model: str | None = None
+    yolov8_device: str | None = None
     extra: dict[str, str] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         self.detection_backend = self.detection_backend.lower()  # type: ignore[assignment]
         self.segmentation_backend = self.segmentation_backend.lower()  # type: ignore[assignment]
+        if self.yolov8_device:
+            self.yolov8_device = self.yolov8_device.lower()
 
 
 settings = BackendSettings()
