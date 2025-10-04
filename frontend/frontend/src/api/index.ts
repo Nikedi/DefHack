@@ -42,6 +42,15 @@ export interface ObservationFilters {
   confidence?: number; // minimum confidence threshold
 }
 
+export interface ObservationListMeta {
+  total?: number;
+  limit?: number;
+  offset?: number;
+  returned?: number;
+}
+
+let lastObservationMeta: ObservationListMeta | null = null;
+
 // Normalize filters into query params accepted by backend
 function buildObservationParams(f: ObservationFilters = {}): Record<string, any> {
   const params: Record<string, any> = {};
@@ -112,6 +121,29 @@ async function detectObservationsEndpoint(): Promise<string | null> {
 
 function resetObservationsEndpointCache() { observationsEndpoint = undefined; }
 
+function captureMetaFromWrapper(data: any, observations: any[]) {
+  lastObservationMeta = {
+    total: data.total ?? data.pagination?.total,
+    limit: data.limit ?? data.pagination?.limit,
+    offset: data.offset ?? data.pagination?.offset,
+    returned: data.pagination?.returned ?? observations.length
+  };
+}
+
+function extractList(data: any): SensorObservation[] {
+  if (Array.isArray(data)) {
+    lastObservationMeta = { total: data.length, limit: data.length, offset: 0, returned: data.length };
+    return data as SensorObservation[];
+  }
+  if (looksLikeWrapped(data)) {
+    const arr = Array.isArray(data.observations) ? data.observations : [];
+    captureMetaFromWrapper(data, arr);
+    return arr as SensorObservation[];
+  }
+  lastObservationMeta = null;
+  return [];
+}
+
 // Fetch raw observations from backend with filtering support.
 // Tries detected endpoint, returns [] if none available yet.
 export const fetchObservations = async (filters: ObservationFilters = {}): Promise<SensorObservation[]> => {
@@ -126,9 +158,11 @@ export const fetchObservations = async (filters: ObservationFilters = {}): Promi
       for (const cl of tryClients) {
         try {
           const res = await cl.get(c, { params });
-            const data = res.data;
-            if (Array.isArray(data)) { observationsEndpoint = c; return data; }
-            if (looksLikeWrapped(data)) { observationsEndpoint = c; return data.observations; }
+          const data = res.data;
+          if (Array.isArray(data) || looksLikeWrapped(data)) {
+            observationsEndpoint = c;
+            return extractList(data);
+          }
         } catch { /* ignore */ }
       }
     }
@@ -138,15 +172,21 @@ export const fetchObservations = async (filters: ObservationFilters = {}): Promi
     try {
       const res = await cl.get(ep, { params });
       const data = res.data;
-      if (Array.isArray(data)) return data;
-      if (looksLikeWrapped(data)) return data.observations;
+      if (Array.isArray(data) || looksLikeWrapped(data)) return extractList(data);
     } catch (e: any) {
       logDebug('fetch error client variant', cl.defaults.baseURL, e?.code || e?.response?.status);
       lastDetectionError = 'fetch fail:' + (e?.code || e?.response?.status || 'err');
       // try next client
     }
   }
-  return [];
+  try {
+    const data = await safeGet(ep, params);
+    if (!data) { lastObservationMeta = null; return []; }
+    return extractList(data);
+  } catch (e) {
+    lastObservationMeta = null;
+    return [];
+  }
 };
 
 // Ingest (POST) single observation; backend returns {report_id, notification_status}
@@ -165,4 +205,4 @@ export const fetchReport = (type: string, query: string) =>
   client.post(`/report/${type}`, { query }).then(res => res.data);
 
 // Utility export (optional) for tests / diagnostics
-export const _internal = { detectObservationsEndpoint, resetObservationsEndpointCache, getDebugMeta: () => ({ endpoint: observationsEndpoint, lastDetectionError }) };
+export const _internal = { detectObservationsEndpoint, resetObservationsEndpointCache, getDebugMeta: () => ({ endpoint: observationsEndpoint, lastDetectionError }), getLastObservationMeta: () => lastObservationMeta };

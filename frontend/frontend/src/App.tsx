@@ -5,8 +5,8 @@ import Sidebar from "./components/Sidebar";
 import SummaryCards from "./components/SummaryCards";
 import { TimeSeriesChart } from "./components/Charts";
 import DataTable from "./components/DataTable";
-import ClarityChat from "./components/ClarityChat";
 import RightPanel from "./components/RightPanel";
+import Reports from "./components/Reports";
 import { fetchAnalytics, fetchObservations, _internal } from "./api";
 import ErrorBoundary from "./components/ErrorBoundary";
 import "./styles/military.css";
@@ -19,6 +19,7 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [lastRefresh, setLastRefresh] = useState<string | null>(null);
   const [endpointPath, setEndpointPath] = useState<string | null>(null);
+  const [listMeta, setListMeta] = useState<any>(null);
   const backoffRef = useRef(2000);
   const refreshTimerRef = useRef<any>(null);
   const abortRef = useRef<boolean>(false);
@@ -43,6 +44,8 @@ function App() {
         console.log('[manual-refresh] fetched observations count=', rows?.length || 0, rows);
       }
       if (!abortRef.current) setObservations(rows ?? []);
+      const meta = _internal.getLastObservationMeta?.();
+      if (!abortRef.current) setListMeta(meta);
       setLastRefresh(new Date().toLocaleTimeString());
       backoffRef.current = 5000; // reset to 5s after success
     } catch (err) {
@@ -115,7 +118,7 @@ function App() {
             {page === "dashboard" && (
               <>
                 {/* 2x2 Summary Metric Grid */}
-                <SummaryCards analytics={analytics} />
+                <SummaryCards analytics={analytics} observations={observations} listMeta={listMeta} />
 
                 {/* Observations Table moved ABOVE map */}
                 <div className="mb-4 mil-panel mil-table-wrap">
@@ -159,10 +162,10 @@ function App() {
 
             {page === "reports" && (
               <div className="flex gap-4">
-                <div className="flex-1">
-                  <ClarityChat />
+                <div className="flex-1 flex flex-col">
+                  <Reports observations={observations} />
                 </div>
-                <RightPanel analytics={analytics} />
+                <RightPanel mode="reports" analytics={analytics} />
               </div>
             )}
           </ErrorBoundary>
