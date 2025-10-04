@@ -6,6 +6,11 @@ from PIL import Image
 
 from .. import ImageIntelSchema, soldier_recognition_pipeline
 
+pytestmark = pytest.mark.skipif(
+	ImageIntelSchema is None or soldier_recognition_pipeline is None,
+	reason="Legacy image pipeline not available in this build",
+)
+
 def test_pipeline_runs(dummy_image):
 	result = soldier_recognition_pipeline(
 		dummy_image,
