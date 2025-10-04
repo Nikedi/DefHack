@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import logging
-from datetime import timezone
+from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Sequence, Union
 
 from telegram import Update
@@ -14,6 +15,20 @@ from ..services.openai_analyzer import OpenAIAnalyzer
 from ..utils import format_log, get_observer_signature, get_unit, to_mgrs, utc_iso
 
 
+PENDING_LOCATION_WINDOW = timedelta(seconds=10)
+
+
+@dataclass(slots=True)
+class PendingObservation:
+    text: str
+    what: str
+    amount: Optional[float]
+    unit: Optional[str]
+    observer: Optional[str]
+    tags: Sequence[str]
+    timestamp: datetime
+
+
 def create_group_handlers(
     analyzer: OpenAIAnalyzer,
     logger: logging.Logger,
@@ -21,6 +36,22 @@ def create_group_handlers(
     *,
     map_manager: Optional[MapManager] = None,
 ) -> List[Union[MessageHandler, CommandHandler]]:
+    pending_observations: Dict[int, Dict[int, PendingObservation]] = {}
+
+    def _prune_pending(chat_id: int, now: datetime) -> None:
+        chat_pending = pending_observations.get(chat_id)
+        if not chat_pending:
+            return
+        expired = [
+            user_id
+            for user_id, pending in chat_pending.items()
+            if now - pending.timestamp > PENDING_LOCATION_WINDOW
+        ]
+        for user_id in expired:
+            chat_pending.pop(user_id, None)
+        if not chat_pending:
+            pending_observations.pop(chat_id, None)
+
     async def _process_observation(chat, msg, content: str, *, source: str = "text") -> None:
         text = (content or "").replace("\n", " ").strip()
         if not text:
@@ -48,6 +79,17 @@ def create_group_handlers(
         )
         if map_manager:
             tags: Sequence[str] = ("human", "voice") if source == "voice" else ("human", "text")
+            _prune_pending(chat.id, msg.date)
+            pending_chat = pending_observations.setdefault(chat.id, {})
+            pending_chat[msg.from_user.id] = PendingObservation(
+                text=text,
+                what=text,
+                amount=None,
+                unit=unit,
+                observer=observer,
+                tags=tags,
+                timestamp=msg.date,
+            )
             await map_manager.add_observation(
                 chat_id=chat.id,
                 source_id=f"msg-{msg.message_id}",
@@ -116,20 +158,36 @@ def create_group_handlers(
             confidence = 90.0
             if accuracy_val:
                 confidence = max(40.0, 100.0 - min(accuracy_val / 5.0, 60.0))
+            _prune_pending(chat.id, msg.date)
+            pending_chat = pending_observations.get(chat.id, {})
+            pending = pending_chat.pop(msg.from_user.id, None)
+            text_content = "Location update"
+            what_content = "Location update"
+            unit_for_map = unit
+            observer_for_map = observer
+            tags: Sequence[str] = ("friendly", "location")
+            if pending and msg.date - pending.timestamp <= PENDING_LOCATION_WINDOW:
+                text_content = pending.text
+                what_content = pending.what or pending.text
+                unit_for_map = pending.unit or unit
+                observer_for_map = pending.observer or observer
+                merged_tags = set(pending.tags)
+                merged_tags.update({"friendly", "location"})
+                tags = tuple(sorted(merged_tags))
             await map_manager.add_observation(
                 chat_id=chat.id,
                 source_id=f"loc-{msg.message_id}",
                 lat=loc.latitude,
                 lon=loc.longitude,
-                text="Location update",
-                what="Location update",
+                text=text_content,
+                what=what_content,
                 amount=None,
                 observed_at=msg.date,
-                unit=unit,
-                observer=observer,
+                unit=unit_for_map,
+                observer=observer_for_map,
                 confidence=confidence,
                 accuracy_m=accuracy_val,
-                tags=("friendly", "location"),
+                tags=tags,
                 mgrs=mgrs_str,
             )
 
