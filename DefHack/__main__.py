@@ -155,6 +155,8 @@ def _format_mgrs(value: Optional[str]) -> str:
 def _normalise_what(value: Optional[str]) -> str:
 	if not value:
 		return ""
+	if value.startswith("TACTICAL:"):
+		return value[len("TACTICAL:") :]
 	return value
 
 
@@ -243,7 +245,17 @@ def _post_payload(payload: dict[str, object], *, url: str, api_key: Optional[str
 				return True
 			print(f"Server responded with HTTP {status}, will retry later.")
 	except error.HTTPError as http_exc:
-		print(f"HTTP error posting sensor reading: {http_exc.status} {http_exc.reason}")
+		details = ""
+		try:
+			body = http_exc.read()
+			if body:
+				details = body.decode("utf-8", errors="replace").strip()
+		except Exception:
+			pass
+		if details:
+			print(f"HTTP error posting sensor reading: {http_exc.status} {http_exc.reason} -> {details}")
+		else:
+			print(f"HTTP error posting sensor reading: {http_exc.status} {http_exc.reason}")
 	except error.URLError as url_exc:
 		print(f"Network error posting sensor reading: {url_exc}")
 	except Exception as exc:
