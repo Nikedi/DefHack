@@ -5,7 +5,8 @@ import Sidebar from "./components/Sidebar";
 import SummaryCards from "./components/SummaryCards";
 import { TimeSeriesChart, WhatPieChart } from "./components/Charts";
 import DataTable from "./components/DataTable";
-import Reports from "./components/Reports";
+import ClarityChat from "./components/ClarityChat";
+import RightPanel from "./components/RightPanel";
 import { fetchAnalytics, fetchObservations } from "./api";
 import ErrorBoundary from "./components/ErrorBoundary";
 import "./styles/military.css";
@@ -100,7 +101,14 @@ function App() {
               </>
             )}
 
-            {page === "reports" && <Reports />}
+            {page === "reports" && (
+              <div className="flex gap-4">
+                <div className="flex-1">
+                  <ClarityChat />
+                </div>
+                <RightPanel analytics={analytics} />
+              </div>
+            )}
           </ErrorBoundary>
         </div>
       </div>
