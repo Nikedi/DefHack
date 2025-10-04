@@ -1,6 +1,38 @@
 """
 Complete DefHack Telegram Bot Integration System
-Integrates all components into a working military intelligence system
+Integrates all components into a working military intellig                if observation:
+                    # Update location if we have it from the cluster
+                    if cluster['has_location'] and cluster['location']:
+                        observation.mgrs = cluster['location']
+                    
+                    # Classify the message type and handle accordingly
+                    message_type = self._classify_message_type(combined_message)
+                    
+                    if message_type == "logistics":
+                        # Prefix logistics messages with LOGISTICS keyword
+                        observation.formatted_data['what'] = f"LOGISTICS: {observation.formatted_data.get('what', 'Unknown logistics requirement')}"
+                        self.logger.info(f"📦 Logistics observation created: {observation.formatted_data['what']}")
+                        
+                        # Store in database but don't notify leaders
+                        await self.leader_notifications._store_observation_in_database(observation)
+                        self.logger.info(f"✅ Logistics observation stored in database (no leader notification)")
+                        
+                    elif message_type == "support":
+                        # Prefix support messages with SUPPORT keyword
+                        observation.formatted_data['what'] = f"SUPPORT: {observation.formatted_data.get('what', 'Unknown support requirement')}"
+                        self.logger.info(f"🔧 Support observation created: {observation.formatted_data['what']}")
+                        
+                        # Store in database but don't notify leaders
+                        await self.leader_notifications._store_observation_in_database(observation)
+                        self.logger.info(f"✅ Support observation stored in database (no leader notification)")
+                        
+                    else:
+                        # Tactical observation - normal processing with leader notifications
+                        self.logger.info(f"⚡ Tactical observation created: threat_level={observation.threat_level}, messages={len(cluster['messages'])}")
+                        
+                        # Send to leader notification system
+                        await self.leader_notifications.process_new_observation(observation, chat_id)
+                        self.logger.info(f"✅ Leader notifications sent for tactical observation")m
 """
 
 import asyncio
@@ -178,6 +210,93 @@ class DefHackTelegramSystem:
         
         self.logger.info("All handlers registered successfully")
     
+    def _is_relevant_message(self, message_text: str) -> bool:
+        """Check if a message is relevant for tactical intelligence processing"""
+        if not message_text:
+            return False
+            
+        message_lower = message_text.lower()
+        
+        # Skip common irrelevant patterns (personal/casual messages)
+        irrelevant_patterns = [
+            # Social/casual conversation
+            'hei', 'moi', 'kiitos', 'thanks', 'lol', 'haha', 'ok', 'okei',
+            # Personal expressions/complaints
+            'want home', 'haluan kotii', 'miss home', 'ikävä kotia',
+            'bored', 'tylsää', 'tired', 'väsynyt', 'homesick', 'koti-ikävä',
+            # Jokes/random expressions
+            'just kidding', 'vitsi', 'haha', 'lmao', 'rofl'
+        ]
+        
+        # Check for irrelevant patterns
+        for pattern in irrelevant_patterns:
+            if pattern in message_lower:
+                return False
+        
+        # Skip very short messages (less than 3 characters)
+        if len(message_text.strip()) <= 2:
+            return False
+        
+        # Always process if contains tactical keywords
+        tactical_keywords = [
+            # Military equipment
+            'bmp', 'tank', 'panzer', 'vaunu', 'helikopteri', 'helicopter', 'drone', 'drooni',
+            # Military positions/movements  
+            'enemy', 'vih', 'vihollinen', 'patrol', 'partio', 'recon', 'tiedustelu',
+            # Locations/coordinates
+            'position', 'asema', 'location', 'sijainti', 'koordinaatti', 'mgrs',
+            # Tactical observations
+            'observed', 'havaittu', 'näky', 'spotted', 'contact', 'yhteys',
+            # Logistics (will be handled specially)
+            'food', 'ruoka', 'water', 'vesi', 'ammo', 'ammunition', 'ampumatar',
+            'toilet', 'wc', 'supplies', 'tarvike', 'fuel', 'polttoaine', 'medicine', 'lääke'
+        ]
+        
+        for keyword in tactical_keywords:
+            if keyword in message_lower:
+                return True
+        
+        # Process if contains numbers (likely quantities, coordinates, etc.)
+        import re
+        if re.search(r'\d', message_text):
+            return True
+            
+        # Process if longer than 10 characters (likely contains useful info)
+        if len(message_text.strip()) > 10:
+            return True
+            
+        return False
+    
+    def _classify_message_type(self, message_text: str) -> str:
+        """Classify message type for appropriate handling"""
+        if not message_text:
+            return "tactical"
+            
+        message_lower = message_text.lower()
+        
+        # Logistics keywords (supplies, fuel, ammo)
+        logistics_keywords = [
+            'food', 'ruoka', 'water', 'vesi', 'supplies', 'tarvike', 
+            'fuel', 'polttoaine', 'ammunition', 'ampumatar', 'ammo'
+        ]
+        
+        # Support keywords (maintenance, medical, facilities)
+        support_keywords = [
+            'toilet', 'wc', 'toiletpaper', 'vessapaperi', 'medicine', 'lääke', 'medical',
+            'maintenance', 'huolto', 'repair', 'korjaus', 'spare', 'varaosa',
+            'broken', 'rikki', 'fix', 'korjaa', 'help', 'apu'
+        ]
+        
+        for keyword in logistics_keywords:
+            if keyword in message_lower:
+                return "logistics"
+                
+        for keyword in support_keywords:
+            if keyword in message_lower:
+                return "support"
+        
+        return "tactical"
+    
     async def _handle_start(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /start command"""
         user_id = update.effective_user.id
@@ -289,6 +408,15 @@ Use `/register` to begin the registration process.
         username = update.effective_user.username or "Unknown"
         chat_title = update.effective_chat.title or "Unknown Group"
         cluster_key = f"{chat_id}_{user_id}"
+        
+        # Skip if not a group message (only process group messages)
+        if update.effective_chat.type == "private":
+            return
+        
+        # Skip processing if message is not relevant for tactical intelligence
+        if update.message.text and not self._is_relevant_message(update.message.text):
+            self.logger.info(f"📝 Skipping irrelevant message from {username}: {update.message.text[:50]}...")
+            return
         
         # Handle location messages - add to existing cluster or create new one
         if update.message.location:
