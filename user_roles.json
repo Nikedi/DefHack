@@ -8,7 +8,7 @@
     "rank": null,
     "callsign": null,
     "registered_at": "2025-10-04T08:11:01.198936+00:00",
-    "last_active": "2025-10-04T14:39:19.047379+00:00",
+    "last_active": "2025-10-04T18:12:48.149085+00:00",
     "phone_number": null
   },
   "887241145": {
@@ -20,7 +20,7 @@
     "rank": null,
     "callsign": null,
     "registered_at": "2025-10-04T08:15:45.023010+00:00",
-    "last_active": "2025-10-04T15:31:51.608812+00:00",
+    "last_active": "2025-10-04T17:57:44.733233+00:00",
     "phone_number": null
   },
   "12345": {
@@ -123,12 +123,12 @@
     "user_id": 6320750004,
     "username": "laurimakinen",
     "full_name": "laurimakinen",
-    "role": "platoon_2ic",
-    "unit": "2. PSTOS",
+    "role": "platoon_leader",
+    "unit": "Alpha Company",
     "rank": null,
     "callsign": null,
     "registered_at": "2025-10-04T12:01:43.605932+00:00",
-    "last_active": "2025-10-04T14:51:36.268504+00:00",
+    "last_active": "2025-10-04T17:36:54.905747+00:00",
     "phone_number": null
   },
   "5268524790": {
@@ -141,6 +141,18 @@
     "callsign": null,
     "registered_at": "2025-10-04T15:35:02.427922+00:00",
     "last_active": "2025-10-04T15:35:02.427922+00:00",
+    "phone_number": null
+  },
+  "6345419304": {
+    "user_id": 6345419304,
+    "username": "k_kiirikki",
+    "full_name": "k_kiirikki",
+    "role": "platoon_2ic",
+    "unit": "2. PSTOS",
+    "rank": null,
+    "callsign": null,
+    "registered_at": "2025-10-04T18:12:07.250945+00:00",
+    "last_active": "2025-10-04T18:12:41.068216+00:00",
     "phone_number": null
   }
 }

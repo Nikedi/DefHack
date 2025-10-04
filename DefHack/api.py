@@ -1,4 +1,5 @@
 from fastapi import FastAPI, UploadFile, File, Form, Depends, Header, HTTPException
+from datetime import datetime
 from .db import SessionLocal
 from .config import settings
 from .schemas import SensorObservationIn
@@ -9,6 +10,8 @@ from .llm import generate_order_from_context
 
 app = FastAPI(title="Intel DB")
 
+# API now uses database polling for notifications - no direct notification code needed
+
 async def get_db():
     async with SessionLocal() as s:
         yield s
@@ -17,10 +20,28 @@ def enforce_write_key(x_api_key: str | None):
     if x_api_key != settings.API_WRITE_KEY:
         raise HTTPException(status_code=401, detail="Invalid API key")
 
+# Notification functions removed - using database polling approach instead
+
 @app.post("/ingest/sensor")
 async def ingest_sensor(payload: SensorObservationIn, db=Depends(get_db), x_api_key: str | None = Header(None)):
     enforce_write_key(x_api_key)
-    return await save_sensor(db, payload.model_dump())
+    
+    # Modify payload to mark for leader notification polling
+    payload_dict = payload.model_dump()
+    
+    # Mark sensor_id as 'UNSENT' to trigger Telegram bot polling
+    if payload_dict.get('sensor_id'):
+        payload_dict['sensor_id'] = 'UNSENT'
+    else:
+        payload_dict['sensor_id'] = 'UNSENT'
+    
+    # Save observation to database - it will be picked up by Telegram bot polling
+    result = await save_sensor(db, payload_dict)
+    
+    # Add notification status to response
+    result['notification_status'] = 'queued_for_polling'
+    
+    return result
 
 @app.post("/intel/upload")
 async def intel_upload(

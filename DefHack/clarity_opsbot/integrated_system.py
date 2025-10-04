@@ -62,6 +62,9 @@ class DefHackIntegratedSystem:
             # Initialize OpenAI client if available
             await self._initialize_openai()
             
+            # Start polling for unsent API observations
+            self._start_observation_polling()
+            
             self.initialized = True
             self.logger.info("✅ DefHack system fully initialized")
             
@@ -194,6 +197,155 @@ class DefHackIntegratedSystem:
                 self.logger.warning("⚠️ OpenAI API key not found or openai module not available")
         except Exception as e:
             self.logger.error(f"Failed to initialize OpenAI client: {e}")
+    
+    def _start_observation_polling(self):
+        """Start periodic polling for unsent API observations"""
+        try:
+            from telegram.ext import JobQueue
+            
+            # Get the job queue from the application
+            job_queue = self.app.job_queue
+            
+            # Schedule the polling job to run every 10 seconds
+            job_queue.run_repeating(
+                self._poll_unsent_observations,
+                interval=10,  # Poll every 10 seconds
+                first=5,      # Start after 5 seconds
+                name="observation_polling"
+            )
+            
+            self.logger.info("✅ Started polling for unsent API observations (every 10s)")
+            
+        except Exception as e:
+            self.logger.error(f"Failed to start observation polling: {e}")
+    
+    async def _poll_unsent_observations(self, context):
+        """Poll database for observations with sensor_id='UNSENT' and send notifications"""
+        try:
+            # Use direct database connection for bot (running outside Docker)
+            import asyncpg
+            
+            # Connect directly to localhost database
+            db_url = "postgresql://postgres:postgres@localhost:5432/defhack"
+            conn = await asyncpg.connect(db_url)
+            
+            try:
+                # Query for unsent observations
+                query = """
+                    SELECT time, mgrs, what, amount, confidence, sensor_id, unit, observer_signature, received_at
+                    FROM sensor_reading 
+                    WHERE sensor_id = 'UNSENT'
+                    ORDER BY received_at ASC
+                    LIMIT 10
+                """
+                
+                unsent_observations = await conn.fetch(query)
+                
+                if not unsent_observations:
+                    return  # No unsent observations
+                
+                self.logger.info(f"📡 Found {len(unsent_observations)} unsent API observations")
+                
+                # Process each unsent observation
+                for obs in unsent_observations:
+                    try:
+                        await self._process_unsent_observation(conn, obs)
+                    except Exception as e:
+                        self.logger.error(f"Failed to process unsent observation: {e}")
+                        continue
+            finally:
+                await conn.close()
+                
+        except Exception as e:
+            self.logger.error(f"Error in observation polling: {e}")
+    
+    async def _process_unsent_observation(self, conn, observation):
+        """Process a single unsent observation and send leader notifications"""
+        try:
+            from .enhanced_processor import ProcessedObservation
+            
+            # Convert database row to ProcessedObservation format (asyncpg Record access)
+            # Convert Decimal to int/float for JSON serialization
+            amount_value = None
+            if observation['amount'] is not None:
+                amount_value = int(observation['amount']) if observation['amount'] == int(observation['amount']) else float(observation['amount'])
+            
+            api_observation = ProcessedObservation(
+                original_message=f"API Sensor: {observation['what']}",
+                formatted_data={
+                    'what': observation['what'],
+                    'confidence': observation['confidence'],
+                    'amount': amount_value,
+                    'sensor_id': observation['sensor_id']
+                },
+                confidence_score=float(observation['confidence']) if observation['confidence'] else 50.0,
+                processing_method="api_direct",
+                user_id=0,  # API observations don't have user_id
+                username=observation['observer_signature'] or "API_Observer",
+                unit=observation['unit'] or "External API",
+                mgrs=observation['mgrs'] or "UNKNOWN",
+                timestamp=observation['time'] or observation['received_at'],
+                requires_leader_notification=True,
+                message_type=self._determine_message_type(observation['what']),
+                threat_level=self._determine_threat_level(observation)
+            )
+            
+            # Send notifications to appropriate leaders
+            await self.leader_notifications.process_new_observation(
+                observation=api_observation,
+                chat_id=0  # API observations don't have chat_id
+            )
+            
+            # Mark observation as sent by updating sensor_id to 'SENT'
+            update_query = """
+                UPDATE sensor_reading 
+                SET sensor_id = 'SENT'
+                WHERE time = $1 AND mgrs = $2 AND observer_signature = $3
+                AND sensor_id = 'UNSENT'
+            """
+            
+            await conn.execute(update_query, 
+                observation['time'], 
+                observation['mgrs'], 
+                observation['observer_signature']
+            )
+            
+            self.logger.info(f"✅ Processed and marked as sent: {observation['what'][:50]}...")
+            
+        except Exception as e:
+            self.logger.error(f"Failed to process unsent observation: {e}")
+            raise
+    
+    def _determine_message_type(self, what: str) -> str:
+        """Determine message type for API observations"""
+        what_upper = what.upper()
+        
+        if any(keyword in what_upper for keyword in ['LOGISTICS', 'SUPPLY', 'FUEL', 'AMMO', 'FOOD']):
+            return 'LOGISTICS'
+        elif any(keyword in what_upper for keyword in ['SUPPORT', 'MAINTENANCE', 'REPAIR', 'MEDICAL']):
+            return 'SUPPORT'
+        else:
+            return 'TACTICAL'
+    
+    def _determine_threat_level(self, observation) -> str:
+        """Determine threat level for API observations based on content and confidence"""
+        what = observation['what'].upper()
+        confidence = observation['confidence'] or 50
+        
+        # High threat indicators
+        critical_keywords = ['TANK', 'ARMOR', 'ARTILLERY', 'MISSILE', 'URGENT', 'CRITICAL', 'ATTACK', 'ASSAULT']
+        high_keywords = ['PATROL', 'VEHICLE', 'SQUAD', 'MOVEMENT', 'AIRCRAFT', 'FIGHTER', 'BMP', 'BTR']
+        
+        if any(keyword in what for keyword in critical_keywords) and confidence >= 80:
+            return 'CRITICAL'
+        elif any(keyword in what for keyword in critical_keywords) and confidence >= 60:
+            return 'HIGH'
+        elif any(keyword in what for keyword in high_keywords) and confidence >= 70:
+            return 'HIGH'
+        elif confidence >= 80:
+            return 'MEDIUM'
+        else:
+            return 'LOW'
     
     def _setup_handlers(self):
         """Setup all message and command handlers"""
