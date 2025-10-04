@@ -60,88 +60,49 @@ class AppConfig:
 def parse_args(argv: Sequence[str]) -> AppConfig:
 	parser = argparse.ArgumentParser(description="Continuously capture images and post detections.")
 	parser.add_argument("--interval", type=float, default=10.0, help="Seconds between captures (default: 10)")
-	parser.add_argument("--mgrs", default="35VKH12345678", help="MGRS location coded into sensor readings")
-	parser.add_argument("--sensor-id", default="uav-17", help="Sensor identifier reported to the API")
-	parser.add_argument("--unit", default="Coy A", help="Unit label for the sensor readings")
+	parser.add_argument(
+		"--mgrs",
+		default="UNKNOWN",
+		help="MGRS location coded into sensor readings (default: UNKNOWN)",
+	)
+	parser.add_argument(
+		"--sensor-id",
+		default="YOLOv8-Pipeline",
+		help="Sensor identifier reported to the API (default: YOLOv8-Pipeline)",
+	)
+	parser.add_argument(
+		"--unit",
+		default=None,
+		help="Unit label for the sensor readings (default: use pipeline-provided value)",
+	)
 	parser.add_argument(
 		"--observer-signature",
-		default="Sensor 1, Team A",
-		help="Observer signature included with each reading",
+		default="YOLOv8 Inference",
+		help="Observer signature included with each reading (default: YOLOv8 Inference)",
 	)
 	parser.add_argument("--api-url", default=DEFAULT_API_URL, help="Target ingestion endpoint URL")
 	parser.add_argument("--api-key", default=DEFAULT_API_KEY, help="API key for the ingestion endpoint")
-	parser.add_argument(
-		"--backlog-file",
-		type=Path,
-		default=DEFAULT_BACKLOG_PATH,
-		help="Path to persist undelivered sensor readings",
-	)
-	parser.add_argument(
-		"--save-folder",
-		type=Path,
-		default=DEFAULT_SAVE_FOLDER,
-		help="Directory where captured images are stored",
-	)
+	parser.add_argument("--backlog-file", type=Path, default=DEFAULT_BACKLOG_PATH, help="Path to persist undelivered sensor readings")
+	parser.add_argument("--save-folder", type=Path, default=DEFAULT_SAVE_FOLDER, help="Directory where captured images are stored")
 	parser.add_argument("--source", type=int, default=0, help="Camera device index for OpenCV")
-	parser.add_argument(
-		"--test-images",
-		type=Path,
-		nargs="*",
-		default=None,
-		help="Optional list of images to replay instead of using a live camera",
-	)
-	parser.add_argument(
-		"--iterations",
-		type=int,
-		default=None,
-		help="Stop after this many iterations (default: run forever)",
-	)
+	parser.add_argument("--test-images", type=Path, nargs="*", default=None, help="Optional list of images to replay instead of using a live camera")
+	parser.add_argument("--iterations", type=int, default=None, help="Stop after this many iterations (default: run forever)")
 	parser.add_argument("--weights", default=None, help="Override YOLO weights path")
 	parser.add_argument("--caption-model", default=None, help="Override caption model identifier")
-	parser.add_argument(
-		"--no-caption",
-		action="store_true",
-		help="Disable caption retrieval to speed up inference",
-	)
-	parser.add_argument(
-		"--caption-top-k",
-		type=int,
-		default=1,
-		help="How many captions to retrieve per detection (default: 1)",
-	)
-	parser.add_argument(
-		"--confidence",
-		type=float,
-		default=0.25,
-		help="Minimum detection confidence for YOLO (default: 0.25)",
-	)
+	parser.add_argument("--no-caption", action="store_true", help="Disable caption retrieval to speed up inference")
+	parser.add_argument("--caption-top-k", type=int, default=1, help="How many captions to retrieve per detection (default: 1)")
+	parser.add_argument("--confidence", type=float, default=0.25, help="Minimum detection confidence for YOLO (default: 0.25)")
 	parser.add_argument("--device", default=None, help="Preferred torch device (e.g., 'cuda' or 'cpu')")
-	parser.add_argument(
-		"--caption-corpus",
-		type=Path,
-		default=None,
-		help="Optional phrase corpus for CLIP retrieval",
-	)
-	parser.add_argument(
-		"--image-history",
-		type=int,
-		default=5,
-		help="How many captured images to retain on disk (default: 5)",
-	)
-	parser.add_argument(
-		"--http-timeout",
-		type=float,
-		default=5.0,
-		help="Seconds before HTTP POST attempts time out (default: 5)",
-	)
-
+	parser.add_argument("--caption-corpus", type=Path, default=None, help="Optional phrase corpus for CLIP retrieval")
+	parser.add_argument("--image-history", type=int, default=5, help="How many captured images to retain on disk (default: 5)")
+	parser.add_argument("--http-timeout", type=float, default=5.0, help="Seconds before HTTP POST attempts time out (default: 5)")
 	args = parser.parse_args(argv)
 
 	return AppConfig(
 		interval=max(1.0, args.interval),
 		mgrs=args.mgrs,
 		sensor_id=args.sensor_id,
-		unit=args.unit,
+		unit=args.unit or None,
 		observer_signature=args.observer_signature,
 		api_url=args.api_url,
 		api_key=args.api_key or None,
@@ -162,7 +123,7 @@ def parse_args(argv: Sequence[str]) -> AppConfig:
 	)
 
 
-def _normalise_iso8601(value: object) -> str:
+def _format_timestamp(value: object) -> str:
 	if isinstance(value, datetime):
 		dt = value
 	elif isinstance(value, str):
@@ -171,10 +132,30 @@ def _normalise_iso8601(value: object) -> str:
 		except ValueError:
 			return value
 	else:
-		return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+		dt = datetime.now(timezone.utc)
 
-	dt = dt.astimezone(timezone.utc)
-	return dt.replace(microsecond=0).isoformat().replace("+00:00", "Z")
+	if dt.tzinfo is None:
+		dt = dt.replace(tzinfo=timezone.utc)
+	else:
+		dt = dt.astimezone(timezone.utc)
+
+	return dt.isoformat(sep=" ", timespec="microseconds")
+
+
+def _format_mgrs(value: Optional[str]) -> str:
+	if not value:
+		return "UNKNOWN"
+	cleaned = value.replace(" ", "").upper()
+	return cleaned or "UNKNOWN"
+
+
+def _normalise_what(value: Optional[str]) -> str:
+	if not value:
+		return ""
+	prefix = "TACTICAL:"
+	if value.startswith(prefix):
+		return value[len(prefix):]
+	return value
 
 
 def _load_backlog(path: Path) -> List[dict[str, object]]:
@@ -237,14 +218,24 @@ def _prepare_payloads(
 	payloads: List[dict[str, object]] = []
 	for reading in readings:
 		try:
-			payload = reading.model_dump(mode="json")
+			payload = reading.model_dump(mode="python")
 		except AttributeError:
 			payload = reading.dict()  # type: ignore[attr-defined]
-		time_value = payload.get("time")
-		payload["time"] = _normalise_iso8601(time_value)
-		if unit_override:
-			payload["unit"] = unit_override
-		payloads.append(payload)
+		timestamp = _format_timestamp(payload.get("time"))
+		amount = payload.get("amount")
+		payloads.append(
+			{
+				"time": timestamp,
+				"mgrs": _format_mgrs(payload.get("mgrs")),
+				"what": _normalise_what(payload.get("what")),
+				"amount": float(amount) if amount is not None else 0.0,
+				"confidence": int(payload.get("confidence", 0)),
+				"sensor_id": payload.get("sensor_id"),
+				"unit": unit_override if unit_override is not None else payload.get("unit"),
+				"observer_signature": payload.get("observer_signature"),
+				"original_message": payload.get("original_message"),
+			}
+		)
 	return payloads
 
 
@@ -360,6 +351,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 	config = parse_args(argv if argv is not None else sys.argv[1:])
 
 	camera = CameraWorker(src=config.source, test_images=[str(p) for p in config.test_images] if config.test_images else None)
+	empty_frame_runs = 0
 
 	try:
 		camera.start()
@@ -371,17 +363,31 @@ def main(argv: Sequence[str] | None = None) -> int:
 			loop_started = time.time()
 
 			image_path = _capture_frame(camera, config.save_folder)
-			if image_path is not None:
-				readings = _run_inference(image_path, config)
-				if readings:
-					payloads = _prepare_payloads(readings, unit_override=config.unit)
-					_deliver_readings(
-						payloads,
-						backlog_path=config.backlog_file,
-						url=config.api_url,
-						api_key=config.api_key,
-						timeout=config.http_timeout,
-					)
+			if image_path is None:
+				empty_frame_runs += 1
+				if config.test_images:
+					threshold = max(5, len(config.test_images))
+					if empty_frame_runs >= threshold:
+						print("No more test frames available; ending loop.")
+						break
+				else:
+					if empty_frame_runs >= 1:
+						print("No frames captured from camera. Connect a camera or supply --test-images to proceed.")
+						break
+				time.sleep(1.0)
+				continue
+
+			empty_frame_runs = 0
+			readings = _run_inference(image_path, config)
+			if readings:
+				payloads = _prepare_payloads(readings, unit_override=config.unit)
+				_deliver_readings(
+					payloads,
+					backlog_path=config.backlog_file,
+					url=config.api_url,
+					api_key=config.api_key,
+					timeout=config.http_timeout,
+				)
 			_prune_captures(config.save_folder, keep=config.image_history)
 
 			elapsed = time.time() - loop_started
@@ -399,6 +405,9 @@ def main(argv: Sequence[str] | None = None) -> int:
 		except cv2.error as exc:  # pragma: no cover - GUI not available on headless envs
 			msg = getattr(exc, "msg", str(exc))
 			print(f"Skipping destroyAllWindows: {msg}")
+
+	if empty_frame_runs and not config.test_images:
+		return 1
 
 	return 0
 

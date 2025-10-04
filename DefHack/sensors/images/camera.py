@@ -147,7 +147,7 @@ def parse_args():
     return p.parse_args()
 
 
-def prune_folder(folder_path: str, keep: int = 5):
+def prune_folder(folder_path: str, keep: int = 1):
     """Remove oldest files in folder_path until only `keep` newest files remain.
 
     Files are ordered by modification time. Non-file entries are ignored.

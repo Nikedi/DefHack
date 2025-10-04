@@ -86,6 +86,7 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
 	parser.add_argument(
 		"--readings-json",
 		type=Path,
+		default="DefHack/sensors/images/predictions",
 	help="Optional path to write SensorObservationIn objects as JSON.",
 	)
 	parser.add_argument(
