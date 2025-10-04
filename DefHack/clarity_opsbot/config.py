@@ -11,7 +11,8 @@ load_dotenv()
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 GEMINI_MODEL_NAME = os.environ.get("GEMINI_MODEL_NAME", "gemini-flash-latest")
-BATCH_WINDOW_SECONDS = int(os.environ.get("BATCH_WINDOW_SECONDS", "20"))
+GEMINI_TRANSCRIPTION_MODEL = os.environ.get("GEMINI_TRANSCRIPTION_MODEL", "gemini-flash-latest")
+BATCH_WINDOW_SECONDS = int(os.environ.get("BATCH_WINDOW_SECONDS", "10"))
 LOG_LEVEL = os.environ.get("LOG_LEVEL", "WARNING").upper()
 
 LOGGER_NAME = "clarity-opsbot"
