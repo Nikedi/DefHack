@@ -16,7 +16,7 @@ import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Iterable, List, Optional, Sequence, Literal
+from typing import Any, Iterable, List, Optional, Sequence, Literal
 
 import cv2
 from urllib import error, request
@@ -26,7 +26,7 @@ from .sensors.images.yolov8_person_pipeline import Yolov8PersonCaptionSchema
 from .sensors.SensorSchema import SensorObservationIn
 
 
-DEFAULT_API_URL = "http://localhost:8080/ingest/sensor"
+DEFAULT_API_URL = "http://172.20.10.5:8080/ingest/sensor"
 DEFAULT_API_KEY = "583C55345736D7218355BCB51AA47"
 DEFAULT_SAVE_FOLDER = Path(__file__).parent / "sensors" / "images" / "current_image"
 DEFAULT_BACKLOG_PATH = Path(__file__).parent / "sensor_backlog.json"
@@ -75,6 +75,7 @@ class AppConfig:
 	caption_corpus: Optional[Path]
 	image_history: int
 	http_timeout: float
+	debug_payload: bool
 	debug: bool
 
 
@@ -117,6 +118,7 @@ def parse_args(argv: Sequence[str]) -> AppConfig:
 	parser.add_argument("--caption-corpus", type=Path, default=None, help="Optional phrase corpus for CLIP retrieval")
 	parser.add_argument("--image-history", type=int, default=5, help="How many captured images to retain on disk (default: 5)")
 	parser.add_argument("--http-timeout", type=float, default=5.0, help="Seconds before HTTP POST attempts time out (default: 5)")
+	parser.add_argument("--debug-payload", action="store_true", help="Print the JSON payload before each API POST")
 	parser.add_argument("--debug", action="store_true", help="Enable verbose debug logging")
 	args = parser.parse_args(argv)
 
@@ -142,6 +144,7 @@ def parse_args(argv: Sequence[str]) -> AppConfig:
 		caption_corpus=args.caption_corpus.resolve() if args.caption_corpus else None,
 		image_history=max(1, args.image_history),
 		http_timeout=max(1.0, args.http_timeout),
+		debug_payload=args.debug_payload,
 		debug=args.debug,
 	)
 
@@ -153,7 +156,7 @@ def _format_timestamp(value: object) -> str:
 		try:
 			dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
 		except ValueError:
-			return value
+			dt = datetime.now(timezone.utc)
 	else:
 		dt = datetime.now(timezone.utc)
 
@@ -162,7 +165,7 @@ def _format_timestamp(value: object) -> str:
 	else:
 		dt = dt.astimezone(timezone.utc)
 
-	return dt.isoformat(sep=" ", timespec="microseconds")
+	return dt.isoformat(timespec="seconds")
 
 
 def _format_mgrs(value: Optional[str]) -> str:
@@ -210,6 +213,88 @@ def _save_backlog(path: Path, backlog: Sequence[dict[str, object]]) -> None:
 		_emit(f"Warning: failed to persist backlog {path}: {exc}")
 
 
+def _canonicalise_payload(raw: dict[str, Any], *, unit_override: Optional[str] = None) -> dict[str, object]:
+	timestamp = _format_timestamp(raw.get("time"))
+	mgrs_value = raw.get("mgrs")
+	unit_value = unit_override if unit_override is not None else raw.get("unit")
+	sensor_id_value = raw.get("sensor_id")
+	observer_signature = raw.get("observer_signature")
+	confidence_raw = raw.get("confidence", 0)
+	try:
+		confidence_value = int(confidence_raw)
+	except (TypeError, ValueError):
+		confidence_value = 0
+	confidence_value = max(0, min(confidence_value, 100))
+	what_value = _normalise_what(str(raw.get("what") or ""))
+	if not what_value:
+		what_value = "UNKNOWN"
+	structured: dict[str, object] = {
+		"time": timestamp,
+		"mgrs": _format_mgrs(
+			mgrs_value
+			if isinstance(mgrs_value, str)
+			else (str(mgrs_value) if mgrs_value is not None else None)
+		),
+		"what": what_value,
+		"confidence": confidence_value,
+		"sensor_id": str(sensor_id_value) if sensor_id_value else "UNKNOWN",
+		"observer_signature": str(observer_signature) if observer_signature else "UNKNOWN",
+	}
+	if unit_value:
+		structured["unit"] = str(unit_value)
+	amount = raw.get("amount")
+	if amount is not None:
+		try:
+			structured["amount"] = float(amount)
+		except (TypeError, ValueError):
+			pass
+	original_message = raw.get("original_message")
+	if original_message not in (None, ""):
+		structured["original_message"] = original_message
+	return structured
+
+
+def _canonicalise_payload(raw: dict[str, Any], *, unit_override: Optional[str] = None) -> dict[str, object]:
+	timestamp = _format_timestamp(raw.get("time"))
+	mgrs_value = raw.get("mgrs")
+	unit_value = unit_override if unit_override is not None else raw.get("unit")
+	sensor_id_value = raw.get("sensor_id")
+	observer_signature = raw.get("observer_signature")
+	confidence_raw = raw.get("confidence", 0)
+	try:
+		confidence_value = int(confidence_raw)
+	except (TypeError, ValueError):
+		confidence_value = 0
+	confidence_value = max(0, min(confidence_value, 100))
+	what_value = _normalise_what(str(raw.get("what") or ""))
+	if not what_value:
+		what_value = "UNKNOWN"
+	structured: dict[str, object] = {
+		"time": timestamp,
+		"mgrs": _format_mgrs(
+			mgrs_value
+			if isinstance(mgrs_value, str)
+			else (str(mgrs_value) if mgrs_value is not None else None)
+		),
+		"what": what_value,
+		"confidence": confidence_value,
+		"sensor_id": str(sensor_id_value) if sensor_id_value else "UNKNOWN",
+		"observer_signature": str(observer_signature) if observer_signature else "UNKNOWN",
+	}
+	if unit_value:
+		structured["unit"] = str(unit_value)
+	amount = raw.get("amount")
+	if amount is not None:
+		try:
+			structured["amount"] = float(amount)
+		except (TypeError, ValueError):
+			pass
+	original_message = raw.get("original_message")
+	if original_message not in (None, ""):
+		structured["original_message"] = original_message
+	return structured
+
+
 def _post_payload(
 	payload: dict[str, object],
 	*,
@@ -254,21 +339,7 @@ def _prepare_payloads(
 			payload = reading.model_dump(mode="python")
 		except AttributeError:
 			payload = reading.dict()  # type: ignore[attr-defined]
-		timestamp = _format_timestamp(payload.get("time"))
-		amount = payload.get("amount")
-		payloads.append(
-			{
-				"time": timestamp,
-				"mgrs": _format_mgrs(payload.get("mgrs")),
-				"what": _normalise_what(payload.get("what")),
-				"amount": float(amount) if amount is not None else 0.0,
-				"confidence": int(payload.get("confidence", 0)),
-				"sensor_id": payload.get("sensor_id"),
-				"unit": unit_override if unit_override is not None else payload.get("unit"),
-				"observer_signature": payload.get("observer_signature"),
-				"original_message": payload.get("original_message"),
-			}
-		)
+		payloads.append(_canonicalise_payload(payload, unit_override=unit_override))
 	return payloads
 
 
@@ -279,14 +350,17 @@ def _deliver_readings(
 	url: str,
 	api_key: Optional[str],
 	timeout: float,
+	debug_payload: bool,
 	debug: bool = False,
 ) -> None:
 	if not payloads and not backlog_path.exists():
 		return
 
+	backlog_entries = [_canonicalise_payload(item) for item in _load_backlog(backlog_path)]
 	backlog = _load_backlog(backlog_path)
 	original_backlog_len = len(backlog)
 	backlog.extend(payloads)
+	backlog_entries.extend(_canonicalise_payload(item) for item in payloads)
 	_debug(
 		f"Delivering {len(backlog)} payload(s) (new={len(payloads)}, backlog={original_backlog_len})",
 		enabled=debug,
@@ -460,6 +534,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 					api_key=config.api_key,
 					timeout=config.http_timeout,
 					debug=config.debug,
+					debug_payload=config.debug_payload,
 				)
 			_prune_captures(config.save_folder, keep=config.image_history)
 
