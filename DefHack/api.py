@@ -1,7 +1,7 @@
 from fastapi import FastAPI, UploadFile, File, Form, Depends, Header, HTTPException
 from .db import SessionLocal
 from .config import settings
-from .schemas import SensorIn
+from .schemas import SensorObservationIn
 from .ingest_sensor import save_sensor
 from .intel_indexer import upload_and_index_intel
 from .retriever import hybrid_search
@@ -18,7 +18,7 @@ def enforce_write_key(x_api_key: str | None):
         raise HTTPException(status_code=401, detail="Invalid API key")
 
 @app.post("/ingest/sensor")
-async def ingest_sensor(payload: SensorIn, db=Depends(get_db), x_api_key: str | None = Header(None)):
+async def ingest_sensor(payload: SensorObservationIn, db=Depends(get_db), x_api_key: str | None = Header(None)):
     enforce_write_key(x_api_key)
     return await save_sensor(db, payload.model_dump())
 
