@@ -1,5 +1,5 @@
 // src/App.tsx
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Topbar from "./components/Topbar";
 import Sidebar from "./components/Sidebar";
 import SummaryCards from "./components/SummaryCards";
@@ -7,7 +7,7 @@ import { TimeSeriesChart } from "./components/Charts";
 import DataTable from "./components/DataTable";
 import ClarityChat from "./components/ClarityChat";
 import RightPanel from "./components/RightPanel";
-import { fetchAnalytics, fetchObservations } from "./api";
+import { fetchAnalytics, fetchObservations, _internal } from "./api";
 import ErrorBoundary from "./components/ErrorBoundary";
 import "./styles/military.css";
 
@@ -17,32 +17,67 @@ function App() {
   const [observations, setObservations] = useState<any[]>([]);
   const [filters, setFilters] = useState<any>({});
   const [loading, setLoading] = useState(false);
+  const [lastRefresh, setLastRefresh] = useState<string | null>(null);
+  const [endpointPath, setEndpointPath] = useState<string | null>(null);
+  const backoffRef = useRef(2000);
+  const refreshTimerRef = useRef<any>(null);
+  const abortRef = useRef<boolean>(false);
 
-  const load = async () => {
+  const API_BASE = (import.meta as any).env?.VITE_API_BASE;
+
+  const load = async (manual: boolean = false) => {
+    if (loading) return; // prevent overlap
     setLoading(true);
+    abortRef.current = false;
     try {
-      const a = await fetchAnalytics();
-      setAnalytics(a);
+      // detect endpoint once (cached internally) – if missing keep trying but slower
+      if (!endpointPath) {
+        const ep = await _internal.detectObservationsEndpoint();
+        if (ep) setEndpointPath(ep);
+      }
+      const a = await fetchAnalytics().catch(() => null);
+      if (!abortRef.current) setAnalytics(a);
+      const rows = await fetchObservations(filters).catch(() => []);
+      if (manual) {
+        // eslint-disable-next-line no-console
+        console.log('[manual-refresh] fetched observations count=', rows?.length || 0, rows);
+      }
+      if (!abortRef.current) setObservations(rows ?? []);
+      setLastRefresh(new Date().toLocaleTimeString());
+      backoffRef.current = 5000; // reset to 5s after success
     } catch (err) {
-      console.error("fetchAnalytics error", err);
-      setAnalytics(null);
+      console.error("refresh cycle error", err);
+      backoffRef.current = Math.min(backoffRef.current * 1.75, 30000);
+    } finally {
+      setLoading(false);
     }
-    try {
-      const rows = await fetchObservations(filters);
-      setObservations(rows ?? []);
-    } catch (err) {
-      console.error("fetchObservations error", err);
-      setObservations([]);
-    }
-    setLoading(false);
   };
 
+  // adaptive polling
   useEffect(() => {
-    load();
-    const t = setInterval(load, 30000); // poll every 30s
-    return () => clearInterval(t);
+    function schedule() {
+      clearTimeout(refreshTimerRef.current);
+      refreshTimerRef.current = setTimeout(async () => {
+        await load();
+        schedule();
+      }, backoffRef.current);
+    }
+    load(); // immediate on filters change
+    schedule();
+    return () => clearTimeout(refreshTimerRef.current);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filters]);
+
+  // manual abort (e.g., page change)
+  useEffect(() => () => { abortRef.current = true; }, []);
+
+  useEffect(() => {
+    if (!endpointPath) {
+      const meta = _internal.getDebugMeta();
+      // eslint-disable-next-line no-console
+      console.warn('[ui] observations endpoint not detected yet', meta, 'API_BASE=', API_BASE);
+    }
+  }, [endpointPath, API_BASE]);
 
   return (
     <div className="mil-root">
@@ -51,6 +86,11 @@ function App() {
         <aside className="mil-sidebar">
           <div className="mil-panel">
             <Sidebar filters={filters} setFilters={setFilters} />
+          </div>
+          <div className="mil-panel p-2 mt-4 text-xs mil-muted">
+            <div>Endpoint: {endpointPath || 'detecting…'}</div>
+            <div>API Base: {API_BASE || 'default ip'}</div>
+            <div>Last refresh: {lastRefresh || '—'}</div>
           </div>
         </aside>
 
@@ -63,7 +103,13 @@ function App() {
               <button className={`btn-mil ${page === "reports" ? "mil-interactive" : ""}`} onClick={() => setPage("reports")}>
                 Reports
               </button>
-              <div className="ml-auto mil-muted">{loading ? "Refreshing…" : "Idle"}</div>
+              <button className="btn-mil" onClick={() => load(true)} disabled={loading}>
+                Refresh Now
+              </button>
+              <div className="ml-auto flex items-center gap-3">
+                <div className="text-xs mil-muted">{loading ? "Refreshing…" : `Updated ${lastRefresh || '—'}`}</div>
+                <span className={`status-dot ${endpointPath ? 'status-ok' : 'status-warn'}`} title={endpointPath ? 'Observations endpoint active' : 'Endpoint not detected'} />
+              </div>
             </div>
 
             {page === "dashboard" && (
@@ -73,7 +119,15 @@ function App() {
 
                 {/* Observations Table moved ABOVE map */}
                 <div className="mb-4 mil-panel mil-table-wrap">
-                  <DataTable data={observations} onRefresh={load} />
+                  <DataTable data={observations} onRefresh={() => load(true)} />
+                  {observations.length === 0 && (
+                    <div className="mt-2 p-2 text-xs mil-muted border-t border-black/30 flex flex-col gap-1">
+                      <div>No observations returned.</div>
+                      <div>Endpoint cache: {endpointPath || 'n/a'}</div>
+                      <div>Detection meta: {JSON.stringify(_internal.getDebugMeta())}</div>
+                      <div>Ensure backend exposes /observations or /sensor/observations and API key is valid.</div>
+                    </div>
+                  )}
                 </div>
 
                 {/* Map + Alerts side by side */}

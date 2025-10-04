@@ -25,7 +25,7 @@ async function detectListingPath(): Promise<string | null> {
     const spec = await client.get('/openapi.json').then(r => r.data);
     const paths = spec?.paths || {};
     if (paths['/observations']) return '/observations';
-    if (paths['/sensor/observations']) return '/sensor/observations';
+    //if (paths['/sensor/observations']) return '/sensor/observations';
   } catch (e) {
     // ignore
   }
