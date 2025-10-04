@@ -63,7 +63,7 @@ def parse_args(argv: Sequence[str]) -> AppConfig:
 	parser.add_argument("--interval", type=float, default=10.0, help="Seconds between captures (default: 10)")
 	parser.add_argument(
 		"--mgrs",
-		default="UNKNOWN",
+		default="35VKH12345678",
 		help="MGRS location coded into sensor readings (default: UNKNOWN)",
 	)
 	parser.add_argument(
