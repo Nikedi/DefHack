@@ -18,14 +18,12 @@ from PIL import Image, ImageDraw, ImageFilter, ImageFont
 from staticmap import IconMarker, StaticMap
 
 from ..config import (
-    MAP_AGE_FADE_MINUTES,
     MAP_CLUSTER_THRESHOLD_METERS,
     MAP_CONFIDENCE_SCALE_METERS,
     MAP_HEIGHT,
     MAP_LIVE_INTERVAL_SECONDS,
     MAP_LOOKBACK_MINUTES,
     MAP_MAX_POINTS,
-    MAP_RECENT_SECONDS,
     MAP_TILE_URL,
     MAP_WIDTH,
 )
@@ -66,7 +64,6 @@ class MapObservation:
     unit: Optional[str]
     observer: Optional[str]
     tags: Set[str]
-    source_type: str
     priority: int
     confidence: float
     accuracy_m: Optional[float]
@@ -107,8 +104,7 @@ class MapRenderer:
         self._tile_url = tile_url
         self._width = width
         self._height = height
-        self._icon_cache: Dict[Tuple[str, str, int], bytes] = {}
-        self._halo_cache: Dict[str, bytes] = {}
+        self._icon_cache: Dict[Tuple[str, int], bytes] = {}
         self._ring_cache: Dict[Tuple[str, int], bytes] = {}
         self._stale_icon: Optional[bytes] = None
 
@@ -126,23 +122,14 @@ class MapRenderer:
         m = StaticMap(self._width, self._height, url_template=self._tile_url)
         cluster_count = len(clustered)
 
-        now_ts = time.time()
-        recent_cutoff = now_ts - MAP_RECENT_SECONDS
-        fade_span = MAP_AGE_FADE_MINUTES * 60
-
         diff_new = diff.new_ids if diff else set()
         diff_moved = diff.moved if diff else {}
 
         callouts: List[str] = []
         for index, cluster in enumerate(clustered, start=1):
             primary = cluster.primary
-            age_seconds = max(0.0, now_ts - primary.timestamp)
-            alpha = 1.0 - min(age_seconds / fade_span, 1.0)
-            alpha = max(0.3, alpha)
-            is_recent = primary.timestamp >= recent_cutoff
 
             style_color = priority_color(primary.priority)
-            layer_key = cluster.layer_key
 
             if diff and primary.observation_id in diff_new:
                 style_color = "#34C759"  # new -> green
@@ -150,20 +137,13 @@ class MapRenderer:
                 style_color = "#AF52DE"  # moved -> purple
 
             icon_bytes = self._build_icon(
-                source_type=layer_key,
                 color=style_color,
-                alpha=alpha,
                 cluster_size=len(cluster.members),
                 priority=primary.priority,
             )
             icon_bytes = self._annotate_icon_with_index(icon_bytes, index)
             marker = IconMarker((cluster.lon, cluster.lat), io.BytesIO(icon_bytes), 0, 0)
             m.add_marker(marker)
-
-            if is_recent:
-                halo_bytes = self._build_halo(style_color, 1.0)
-                halo_marker = IconMarker((cluster.lon, cluster.lat), io.BytesIO(halo_bytes), 0, 0)
-                m.add_marker(halo_marker)
 
             accuracy = cluster.aggregated_accuracy()
             if accuracy:
@@ -183,8 +163,6 @@ class MapRenderer:
         image = await asyncio.to_thread(m.render)
         if image.mode != "RGBA":
             image = image.convert("RGBA")
-        overlay = Image.new("RGBA", image.size, (0, 0, 0, int(255 * 0.25)))
-        image = Image.alpha_composite(image, overlay)
         buf = io.BytesIO()
         image.save(buf, format="PNG")
         return MapRenderResult(
@@ -199,13 +177,11 @@ class MapRenderer:
     def _build_icon(
         self,
         *,
-        source_type: str,
         color: str,
-        alpha: float,
         cluster_size: int,
         priority: int,
     ) -> bytes:
-        key = (source_type, color, cluster_size)
+        key = (color, cluster_size)
         cached = self._icon_cache.get(key)
         if cached is not None:
             return cached
@@ -217,50 +193,21 @@ class MapRenderer:
         shadow_draw = ImageDraw.Draw(shadow_layer)
         icon_draw = ImageDraw.Draw(icon_layer)
 
-        rgba = hex_to_rgba(color, alpha)
-        outline = hex_to_rgba(color, min(alpha + 0.2, 1.0))
+        rgba = hex_to_rgba(color, 1.0)
+        outline = hex_to_rgba(color, 1.0)
         shadow_color = (0, 0, 0, 160)
         shadow_offset = 2
 
         pad = 6
         shape_bbox = [pad, pad, size - pad, size - pad]
-        if source_type == "sensors":
-            points = [
-                (size / 2, pad),
-                (size - pad, size - pad),
-                (pad, size - pad),
-            ]
-            shadow_points = [(x + shadow_offset, y + shadow_offset) for x, y in points]
-            shadow_draw.polygon(shadow_points, fill=shadow_color)
-            icon_draw.polygon(points, fill=rgba, outline=outline, width=3)
-        elif source_type == "voices":
-            shadow_bbox = [
-                shape_bbox[0] + shadow_offset,
-                shape_bbox[1] + shadow_offset,
-                shape_bbox[2] + shadow_offset,
-                shape_bbox[3] + shadow_offset,
-            ]
-            shadow_draw.ellipse(shadow_bbox, fill=shadow_color)
-            icon_draw.ellipse(shape_bbox, fill=rgba, outline=outline, width=3)
-        elif source_type == "fused":
-            points = [
-                (size / 2, pad),
-                (size - pad, size / 2),
-                (size / 2, size - pad),
-                (pad, size / 2),
-            ]
-            shadow_points = [(x + shadow_offset, y + shadow_offset) for x, y in points]
-            shadow_draw.polygon(shadow_points, fill=shadow_color)
-            icon_draw.polygon(points, fill=rgba, outline=outline, width=3)
-        else:  # text and default
-            shadow_bbox = [
-                shape_bbox[0] + shadow_offset,
-                shape_bbox[1] + shadow_offset,
-                shape_bbox[2] + shadow_offset,
-                shape_bbox[3] + shadow_offset,
-            ]
-            shadow_draw.rectangle(shadow_bbox, fill=shadow_color)
-            icon_draw.rectangle(shape_bbox, fill=rgba, outline=outline, width=3)
+        shadow_bbox = [
+            shape_bbox[0] + shadow_offset,
+            shape_bbox[1] + shadow_offset,
+            shape_bbox[2] + shadow_offset,
+            shape_bbox[3] + shadow_offset,
+        ]
+        shadow_draw.rectangle(shadow_bbox, fill=shadow_color)
+        icon_draw.rectangle(shape_bbox, fill=rgba, outline=outline, width=3)
 
         shadow_layer = shadow_layer.filter(ImageFilter.GaussianBlur(radius=3))
         canvas = Image.alpha_composite(canvas, shadow_layer)
@@ -349,21 +296,6 @@ class MapRenderer:
             return clean
         return clean[: limit - 1] + "…"
 
-    def _build_halo(self, color: str, alpha: float) -> bytes:
-        cached = self._halo_cache.get(color)
-        if cached is not None:
-            return cached
-        size = 72
-        img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-        draw = ImageDraw.Draw(img)
-        rgba = hex_to_rgba(color, min(alpha, 0.45))
-        draw.ellipse([4, 4, size - 4, size - 4], outline=rgba, width=6)
-        buffer = io.BytesIO()
-        img.save(buffer, format="PNG")
-        data = buffer.getvalue()
-        self._halo_cache[color] = data
-        return data
-
     def _build_accuracy_ring(self, color: str, accuracy_m: float) -> Optional[bytes]:
         if accuracy_m <= 0:
             return None
@@ -414,10 +346,6 @@ class Cluster:
     @property
     def lon(self) -> float:
         return sum(obs.lon for obs in self.members) / len(self.members)
-
-    @property
-    def layer_key(self) -> str:
-        return self.primary.source_type
 
     def aggregated_accuracy(self) -> Optional[float]:
         accs = [obs.accuracy_m for obs in self.members if obs.accuracy_m]
@@ -514,7 +442,6 @@ class MapManager:
         observed_at: datetime,
         unit: Optional[str],
         observer: Optional[str],
-        source_type: str,
         confidence: Optional[float] = None,
         accuracy_m: Optional[float] = None,
         tags: Optional[Iterable[str]] = None,
@@ -530,8 +457,6 @@ class MapManager:
 
         ts = observed_at.astimezone(timezone.utc).timestamp()
         tags_set, priority = self._classify(text, tags)
-        if source_type == "alerts":
-            priority = min(priority, 2)
         conf = confidence if confidence is not None else 70.0
 
         async with self._lock:
@@ -546,7 +471,6 @@ class MapManager:
                 amount=amount,
                 unit=unit,
                 observer=observer,
-                source_type=source_type,
                 priority=priority,
                 confidence=conf,
                 accuracy_m=accuracy_m,
@@ -568,7 +492,6 @@ class MapManager:
         amount: Optional[float],
         unit: Optional[str],
         observer: Optional[str],
-        source_type: str,
         priority: int,
         confidence: float,
         accuracy_m: Optional[float],
@@ -634,7 +557,6 @@ class MapManager:
             unit=unit,
             observer=observer,
             tags=set(tags),
-            source_type=self._layer_for_source(source_type),
             priority=priority,
             confidence=confidence,
             accuracy_m=accuracy_m,
@@ -766,6 +688,7 @@ class MapManager:
                 f"Δ new {len(diff.new_ids)} | moved {len(diff.moved)} | stale {len(diff.stale)}"
             )
 
+
         header = " | ".join(header_parts)
         if not result.callouts:
             return header
@@ -837,14 +760,9 @@ class MapManager:
     def _classify(self, text: str, tags: Optional[Iterable[str]]) -> Tuple[Set[str], int]:
         base_tags = set(tag.lower() for tag in tags) if tags else set()
         text_lower = text.lower()
-        for tag, keywords in CLASSIFICATION_KEYWORDS.items():
-            if any(keyword in text_lower for keyword in keywords):
-                base_tags.add(tag)
         priority = 4
         if "enemy" in base_tags:
             priority = 2
-            if any(k in text_lower for k in ESCALATION_KEYWORDS):
-                priority = 1
         elif "logistics" in base_tags:
             priority = min(priority, 3)
         elif "terrain" in base_tags:
@@ -887,68 +805,5 @@ class MapManager:
                     if latlon != (None, None):
                         return latlon
         return (None, None)
-
-    def _layer_for_source(self, source_type: str) -> str:
-        mapping = {
-            "text": "text",
-            "voice": "voices",
-            "human": "text",
-            "sensor": "sensors",
-            "fused": "fused",
-            "alerts": "alerts",
-        }
-        return mapping.get(source_type, "text")
-
-
-CLASSIFICATION_KEYWORDS: Dict[str, Sequence[str]] = {
-    "enemy": (
-        "enemy",
-        "hostile",
-        "armor",
-        "tank",
-        "apc",
-        "infantry",
-        "launch",
-        "firing",
-        "contact",
-    ),
-    "friendly": (
-        "friendly",
-        "ally",
-        "support",
-        "resupply",
-        "escort",
-    ),
-    "logistics": (
-        "supply",
-        "ammo",
-        "transport",
-        "logistics",
-        "truck",
-        "convoy",
-        "fuel",
-    ),
-    "terrain": (
-        "bridge",
-        "river",
-        "hill",
-        "ridge",
-        "road",
-        "building",
-        "cover",
-    ),
-}
-
-ESCALATION_KEYWORDS: Sequence[str] = (
-    "heavy",
-    "artillery",
-    "incoming",
-    "advancing",
-    "breakthrough",
-    "penetration",
-    "missile",
-    "airstrike",
-)
-
 
 __all__ = ["MapManager", "MapRenderResult", "MapObservation", "MapPreferences"]

@@ -59,7 +59,6 @@ def create_group_handlers(
                 observed_at=msg.date,
                 unit=unit,
                 observer=observer,
-                source_type="voice" if source == "voice" else "text",
                 tags=tags,
             )
 
@@ -128,7 +127,6 @@ def create_group_handlers(
                 observed_at=msg.date,
                 unit=unit,
                 observer=observer,
-                source_type="sensor",
                 confidence=confidence,
                 accuracy_m=accuracy_val,
                 tags=("friendly", "location"),

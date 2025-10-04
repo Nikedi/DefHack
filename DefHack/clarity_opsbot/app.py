@@ -48,7 +48,11 @@ def build_app(token: Optional[str] = None) -> Application:
     observation_repo = ObservationRepository()
     frago_generator = FragoGenerator(observation_repo)
 
-    for handler in create_group_handlers(analyzer, logger, map_manager=map_manager):
+    for handler in create_group_handlers(
+        analyzer,
+        logger,
+        map_manager=map_manager,
+    ):
         app.add_handler(handler)
     app.add_handler(CommandHandler("start", _start_group, filters=filters.ChatType.GROUPS))
     app.add_handler(CommandHandler("help", _help_group, filters=filters.ChatType.GROUPS))
