@@ -7,14 +7,15 @@ import { TimeSeriesChart } from "./components/Charts";
 import DataTable from "./components/DataTable";
 import RightPanel from "./components/RightPanel";
 import Reports from "./components/Reports";
-import { fetchAnalytics, fetchObservations, _internal } from "./api";
+import { fetchAnalytics, fetchObservations, _internal, type SensorObservation } from "./api";
 import ErrorBoundary from "./components/ErrorBoundary";
+import MapFeed from "./components/MapFeed";
 import "./styles/military.css";
 
 function App() {
   const [page, setPage] = useState<"dashboard" | "reports">("dashboard");
   const [analytics, setAnalytics] = useState<any>(null);
-  const [observations, setObservations] = useState<any[]>([]);
+  const [observations, setObservations] = useState<SensorObservation[]>([]);
   const [filters, setFilters] = useState<any>({});
   const [loading, setLoading] = useState(false);
   const [lastRefresh, setLastRefresh] = useState<string | null>(null);
@@ -137,7 +138,7 @@ function App() {
                 <div className="grid grid-cols-3 gap-4 mb-4">
                   <div className="col-span-2 mil-panel scanline">
                     <div className="mb-2 text-sm mil-muted">Map / Feed</div>
-                    <div className="mil-map-large" />
+                    <MapFeed observations={observations} />
                   </div>
                   <div className="mil-panel mil-alerts">
                     <div className="text-sm mil-muted">Alerts</div>
