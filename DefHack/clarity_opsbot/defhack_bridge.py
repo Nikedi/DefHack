@@ -175,10 +175,11 @@ class DefHackTelegramBridge:
         else:
             observation_time = datetime.now(timezone.utc)
         
-        # Handle MGRS - keep as None for unknown locations or convert lat/lon  
+        # Handle MGRS - preserve valid MGRS, convert lat/lon, or set None for unknown
         if mgrs in ['UNKNOWN', 'Unknown location', 'N/A', ''] or mgrs is None:
             # Keep as None for unknown locations - database should handle NULL values
             mgrs = None
+            self.logger.debug(f"📍 MGRS set to None for unknown location")
         elif mgrs and (',' in mgrs or mgrs.startswith('LAT')):
             # Handle lat/lon coordinates - try to convert to MGRS
             self.logger.info(f"📍 Attempting to convert lat/lon coordinates to MGRS: {mgrs}")
@@ -200,6 +201,14 @@ class DefHackTelegramBridge:
             else:
                 self.logger.warning(f"⚠️ Could not parse lat/lon coordinates or conversion not available: {mgrs}")
                 mgrs = None  # Keep as None for unparseable coordinates
+        elif mgrs and isinstance(mgrs, str) and len(mgrs) > 5:
+            # Valid MGRS coordinate - preserve it
+            self.logger.info(f"✅ Preserving valid MGRS coordinate: {mgrs}")
+            # mgrs stays as is
+        else:
+            # Invalid or empty MGRS
+            self.logger.warning(f"⚠️ Invalid MGRS format, setting to None: {mgrs}")
+            mgrs = None
         
         # Extract unit from group name (first two words)
         unit_name = telegram_data.get('unit', 'Unknown Unit')
