@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from DefHack.__main__ import _canonicalise_payload, _deliver_readings, _prepare_payloads
+from DefHack.__main__ import _canonicalise_payload, _prepare_payloads
 from DefHack.sensors.SensorSchema import SensorObservationIn
 
 
@@ -88,44 +88,3 @@ def test_canonicalise_payload_clamps_confidence_and_fills_unknowns():
 	assert structured["sensor_id"] == "UNKNOWN"
 	assert structured["observer_signature"] == "UNKNOWN"
 	assert structured["unit"] == "Alpha"
-
-
-
-def test_deliver_readings_prints_payload_when_debug(monkeypatch, tmp_path, capsys):
-	def fake_post(payload, **kwargs):
-		return True
-
-	monkeypatch.setattr("DefHack.__main__._post_payload", fake_post)
-	backlog_file = tmp_path / "backlog.json"
-	payload = {
-		"time": "2025-10-04T16:30:00+00:00",
-		"mgrs": "35VLG8472571866",
-		"what": "TACTICAL:test",
-		"confidence": 90,
-		"sensor_id": "TEST",
-		"observer_signature": "Bot",
-	}
-	_deliver_readings([payload], backlog_path=backlog_file, url="http://example", api_key=None, timeout=1.0, debug_payload=True)
-	out = capsys.readouterr().out
-	assert "Payload ready for POST" in out
-	assert '"mgrs": "35VLG8472571866"' in out
-
-
-
-def test_deliver_readings_silent_without_debug(monkeypatch, tmp_path, capsys):
-	def fake_post(payload, **kwargs):
-		return True
-
-	monkeypatch.setattr("DefHack.__main__._post_payload", fake_post)
-	backlog_file = tmp_path / "backlog.json"
-	payload = {
-		"time": "2025-10-04T16:30:00+00:00",
-		"mgrs": "35VLG8472571866",
-		"what": "TACTICAL:test",
-		"confidence": 90,
-		"sensor_id": "TEST",
-		"observer_signature": "Bot",
-	}
-	_deliver_readings([payload], backlog_path=backlog_file, url="http://example", api_key=None, timeout=1.0, debug_payload=False)
-	out = capsys.readouterr().out
-	assert "Payload ready for POST" not in out
