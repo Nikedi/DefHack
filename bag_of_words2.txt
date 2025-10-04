@@ -1,0 +1,15 @@
+foot Soldier
+Utility Task Vehicle
+Motorcycle Scout
+Armored Personnel Carrier
+Infantry Fighting Vehicle
+Main Battle Tank
+Reconnaissance Vehicle
+Towed Artillery
+Self-Propelled Howitzer
+Multiple Launch Rocket System
+Mortar Team
+Man-Portable Air Defense System
+Self-Propelled Anti-Aircraft Gun
+Surface-to-Air Missile Launcher
+Military Truck

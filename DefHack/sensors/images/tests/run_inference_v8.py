@@ -17,7 +17,16 @@ import cv2
 import matplotlib.pyplot as plt
 import torch
 
-from yolov8_person_pipeline import Yolov8PersonCaptionSchema
+try:  # pragma: no cover - prefer package import when available
+    from DefHack.sensors.images.yolov8_person_pipeline import Yolov8PersonCaptionSchema  # type: ignore
+except ImportError:  # pragma: no cover - handle relative execution contexts
+    try:
+        from ..yolov8_person_pipeline import Yolov8PersonCaptionSchema  # type: ignore
+    except ImportError:  # pragma: no cover - standalone script execution fallback
+        repo_root = Path(__file__).resolve().parents[4]
+        if str(repo_root) not in sys.path:
+            sys.path.append(str(repo_root))
+        from DefHack.sensors.images.yolov8_person_pipeline import Yolov8PersonCaptionSchema  # type: ignore
 
 IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff"}
 
