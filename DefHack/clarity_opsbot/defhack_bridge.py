@@ -175,10 +175,10 @@ class DefHackTelegramBridge:
         else:
             observation_time = datetime.now(timezone.utc)
         
-        # Handle MGRS - provide valid placeholder for unknown or convert lat/lon  
+        # Handle MGRS - keep as None for unknown locations or convert lat/lon  
         if mgrs in ['UNKNOWN', 'Unknown location', 'N/A', ''] or mgrs is None:
-            # Use valid MGRS placeholder that passes regex validation
-            mgrs = '01CAA0000000000'  # Valid format placeholder for unknown location
+            # Keep as None for unknown locations - database should handle NULL values
+            mgrs = None
         elif mgrs and (',' in mgrs or mgrs.startswith('LAT')):
             # Handle lat/lon coordinates - try to convert to MGRS
             self.logger.info(f"📍 Attempting to convert lat/lon coordinates to MGRS: {mgrs}")
@@ -193,13 +193,13 @@ class DefHackTelegramBridge:
                         mgrs = converted_mgrs
                     else:
                         self.logger.warning(f"⚠️ MGRS conversion returned UNKNOWN for ({lat}, {lon})")
-                        mgrs = '01CAA0000000000'  # Fallback placeholder
+                        mgrs = None  # Keep as None for failed conversions
                 except Exception as e:
                     self.logger.error(f"❌ MGRS conversion failed for ({lat}, {lon}): {e}")
-                    mgrs = '01CAA0000000000'  # Fallback placeholder
+                    mgrs = None  # Keep as None for failed conversions
             else:
                 self.logger.warning(f"⚠️ Could not parse lat/lon coordinates or conversion not available: {mgrs}")
-                mgrs = '01CAA0000000000'  # Fallback placeholder
+                mgrs = None  # Keep as None for unparseable coordinates
         
         # Extract unit from group name (first two words)
         unit_name = telegram_data.get('unit', 'Unknown Unit')
@@ -211,7 +211,7 @@ class DefHackTelegramBridge:
         
         observation = {
             'what': what,
-            'mgrs': mgrs,  # Always include mgrs - using placeholder for unknown locations
+            'mgrs': mgrs,  # None for unknown locations, actual MGRS string when available
             'confidence': confidence,
             'observer_signature': observer,  # Telegram username
             'time': observation_time.isoformat(),  # Convert datetime to ISO string

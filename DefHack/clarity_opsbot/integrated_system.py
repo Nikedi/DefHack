@@ -244,9 +244,14 @@ class DefHackIntegratedSystem:
                 unsent_observations = await conn.fetch(query)
                 
                 if not unsent_observations:
+                    self.logger.debug("📡 No unsent API observations found")
                     return  # No unsent observations
                 
                 self.logger.info(f"📡 Found {len(unsent_observations)} unsent API observations")
+                # Debug: log the first observation to see what we're getting
+                if unsent_observations:
+                    first_obs = unsent_observations[0]
+                    self.logger.debug(f"🔍 First unsent observation: sensor_id={first_obs['sensor_id']}, time={first_obs['time']}, what={first_obs['what'][:50]}...")
                 
                 # Process each unsent observation
                 for obs in unsent_observations:
@@ -285,7 +290,7 @@ class DefHackIntegratedSystem:
                 user_id=0,  # API observations don't have user_id
                 username=observation['observer_signature'] or "API_Observer",
                 unit=observation['unit'] or "External API",
-                mgrs=observation['mgrs'] or "UNKNOWN",
+                mgrs=observation['mgrs'],  # Keep as None if NULL in database
                 timestamp=observation['time'] or observation['received_at'],
                 requires_leader_notification=True,
                 message_type=self._determine_message_type(observation['what']),
@@ -299,18 +304,40 @@ class DefHackIntegratedSystem:
             )
             
             # Mark observation as sent by updating sensor_id to 'SENT'
-            update_query = """
-                UPDATE sensor_reading 
-                SET sensor_id = 'SENT'
-                WHERE time = $1 AND mgrs = $2 AND observer_signature = $3
-                AND sensor_id = 'UNSENT'
-            """
+            # Use multiple fields to ensure we update the exact row
+            if observation['mgrs'] is None:
+                update_query = """
+                    UPDATE sensor_reading 
+                    SET sensor_id = 'SENT'
+                    WHERE time = $1 AND observer_signature = $2 AND what = $3
+                    AND sensor_id = 'UNSENT'
+                    AND mgrs IS NULL
+                """
+                result = await conn.execute(update_query, 
+                    observation['time'], 
+                    observation['observer_signature'],
+                    observation['what']
+                )
+            else:
+                update_query = """
+                    UPDATE sensor_reading 
+                    SET sensor_id = 'SENT'
+                    WHERE time = $1 AND observer_signature = $2 AND what = $3
+                    AND sensor_id = 'UNSENT'
+                    AND mgrs = $4
+                """
+                result = await conn.execute(update_query, 
+                    observation['time'], 
+                    observation['observer_signature'],
+                    observation['what'],
+                    observation['mgrs']
+                )
             
-            await conn.execute(update_query, 
-                observation['time'], 
-                observation['mgrs'], 
-                observation['observer_signature']
-            )
+            # Check if the update was successful
+            if result == "UPDATE 0":
+                self.logger.warning(f"⚠️ Failed to mark observation as sent - no matching rows updated")
+            else:
+                self.logger.debug(f"✅ Updated {result} rows to SENT status")
             
             self.logger.info(f"✅ Processed and marked as sent: {observation['what'][:50]}...")
             
