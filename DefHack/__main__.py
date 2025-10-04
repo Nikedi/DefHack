@@ -55,6 +55,7 @@ class AppConfig:
 	caption_corpus: Optional[Path]
 	image_history: int
 	http_timeout: float
+	debug_payload: bool
 
 
 def parse_args(argv: Sequence[str]) -> AppConfig:
@@ -96,6 +97,7 @@ def parse_args(argv: Sequence[str]) -> AppConfig:
 	parser.add_argument("--caption-corpus", type=Path, default=None, help="Optional phrase corpus for CLIP retrieval")
 	parser.add_argument("--image-history", type=int, default=5, help="How many captured images to retain on disk (default: 5)")
 	parser.add_argument("--http-timeout", type=float, default=5.0, help="Seconds before HTTP POST attempts time out (default: 5)")
+	parser.add_argument("--debug-payload", action="store_true", help="Print the JSON payload before each API POST")
 	args = parser.parse_args(argv)
 
 	return AppConfig(
@@ -120,6 +122,7 @@ def parse_args(argv: Sequence[str]) -> AppConfig:
 		caption_corpus=args.caption_corpus.resolve() if args.caption_corpus else None,
 		image_history=max(1, args.image_history),
 		http_timeout=max(1.0, args.http_timeout),
+		debug_payload=args.debug_payload,
 	)
 
 
@@ -130,7 +133,7 @@ def _format_timestamp(value: object) -> str:
 		try:
 			dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
 		except ValueError:
-			return value
+			dt = datetime.now(timezone.utc)
 	else:
 		dt = datetime.now(timezone.utc)
 
@@ -190,16 +193,29 @@ def _save_backlog(path: Path, backlog: Sequence[dict[str, object]]) -> None:
 def _canonicalise_payload(raw: dict[str, Any], *, unit_override: Optional[str] = None) -> dict[str, object]:
 	timestamp = _format_timestamp(raw.get("time"))
 	mgrs_value = raw.get("mgrs")
-	unit_value = unit_override if unit_override is not None else raw.get("2. PSTOS")
+	unit_value = unit_override if unit_override is not None else raw.get("unit")
 	sensor_id_value = raw.get("sensor_id")
 	observer_signature = raw.get("observer_signature")
+	confidence_raw = raw.get("confidence", 0)
+	try:
+		confidence_value = int(confidence_raw)
+	except (TypeError, ValueError):
+		confidence_value = 0
+	confidence_value = max(0, min(confidence_value, 100))
+	what_value = _normalise_what(str(raw.get("what") or ""))
+	if not what_value:
+		what_value = "UNKNOWN"
 	structured: dict[str, object] = {
 		"time": timestamp,
-		"mgrs": _format_mgrs(mgrs_value if isinstance(mgrs_value, str) else (str(mgrs_value) if mgrs_value is not None else "None")),
-		"what": "TACTICAL"+_normalise_what(str(raw.get("what") or "")),
-		"confidence": int(raw.get("confidence", 0)),
-		"sensor_id": str(sensor_id_value) if sensor_id_value else "UNSENT",
-		"observer_signature": str(observer_signature) if observer_signature else "yolov8n classifier",
+		"mgrs": _format_mgrs(
+			mgrs_value
+			if isinstance(mgrs_value, str)
+			else (str(mgrs_value) if mgrs_value is not None else None)
+		),
+		"what": what_value,
+		"confidence": confidence_value,
+		"sensor_id": str(sensor_id_value) if sensor_id_value else "UNKNOWN",
+		"observer_signature": str(observer_signature) if observer_signature else "UNKNOWN",
 	}
 	if unit_value:
 		structured["unit"] = str(unit_value)
@@ -210,7 +226,7 @@ def _canonicalise_payload(raw: dict[str, Any], *, unit_override: Optional[str] =
 		except (TypeError, ValueError):
 			pass
 	original_message = raw.get("original_message")
-	if original_message is not None:
+	if original_message not in (None, ""):
 		structured["original_message"] = original_message
 	return structured
 
@@ -260,6 +276,7 @@ def _deliver_readings(
 	url: str,
 	api_key: Optional[str],
 	timeout: float,
+	debug_payload: bool,
 ) -> None:
 	if not payloads and not backlog_path.exists():
 		return
@@ -271,6 +288,9 @@ def _deliver_readings(
 	delivered = 0
 
 	for payload in backlog_entries:
+		if debug_payload:
+			print("Payload ready for POST:")
+			print(json.dumps(payload, indent=2, sort_keys=True))
 		if _post_payload(payload, url=url, api_key=api_key, timeout=timeout):
 			delivered += 1
 			print(f"Delivered reading: {payload.get('what')} @ {payload.get('time')}")
@@ -401,6 +421,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 					url=config.api_url,
 					api_key=config.api_key,
 					timeout=config.http_timeout,
+					debug_payload=config.debug_payload,
 				)
 			_prune_captures(config.save_folder, keep=config.image_history)
 
