@@ -26,7 +26,7 @@ from .sensors.images.yolov8_person_pipeline import Yolov8PersonCaptionSchema
 from .sensors.SensorSchema import SensorObservationIn
 
 
-DEFAULT_API_URL = "http://localhost:8080/ingest/sensor"
+DEFAULT_API_URL = "http://172.20.10.5:8080/ingest/sensor"
 DEFAULT_API_KEY = "583C55345736D7218355BCB51AA47"
 DEFAULT_SAVE_FOLDER = Path(__file__).parent / "sensors" / "images" / "current_image"
 DEFAULT_BACKLOG_PATH = Path(__file__).parent / "sensor_backlog.json"
@@ -139,7 +139,7 @@ def _format_timestamp(value: object) -> str:
 	else:
 		dt = dt.astimezone(timezone.utc)
 
-	return dt.isoformat(sep=" ", timespec="microseconds")
+	return dt.isoformat(timespec="seconds")
 
 
 def _format_mgrs(value: Optional[str]) -> str:
@@ -223,19 +223,26 @@ def _prepare_payloads(
 			payload = reading.dict()  # type: ignore[attr-defined]
 		timestamp = _format_timestamp(payload.get("time"))
 		amount = payload.get("amount")
-		payloads.append(
-			{
-				"time": timestamp,
-				"mgrs": _format_mgrs(payload.get("mgrs")),
-				"what": _normalise_what(payload.get("what")),
-				"amount": float(amount) if amount is not None else 0.0,
-				"confidence": int(payload.get("confidence", 0)),
-				"sensor_id": payload.get("sensor_id"),
-				"unit": unit_override if unit_override is not None else payload.get("unit"),
-				"observer_signature": payload.get("observer_signature"),
-				"original_message": payload.get("original_message"),
-			}
-		)
+		unit_value = unit_override if unit_override is not None else payload.get("unit")
+		structured: dict[str, object] = {
+			"time": timestamp,
+			"mgrs": _format_mgrs(payload.get("mgrs")),
+			"what": _normalise_what(payload.get("what")),
+			"confidence": int(payload.get("confidence", 0)),
+			"observer_signature": payload.get("observer_signature"),
+			"sensor_id": payload.get("sensor_id") or "UNKNOWN",
+		}
+		if unit_value:
+			structured["unit"] = unit_value
+		if amount is not None:
+			try:
+				structured["amount"] = float(amount)
+			except (TypeError, ValueError):
+				pass
+		original_message = payload.get("original_message")
+		if original_message is not None:
+			structured["original_message"] = original_message
+		payloads.append(structured)
 	return payloads
 
 
