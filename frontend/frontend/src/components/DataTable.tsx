@@ -30,7 +30,15 @@ export default function DataTable({ data = [], onRefresh }: { data?: Observation
             </tr>
           </thead>
           <tbody>
-            {data.slice(0, 50).map((r: any) => {
+            {data
+              .slice()
+              .sort((a: any, b: any) => {
+                const aTime = a?.time ? new Date(a.time).getTime() : 0;
+                const bTime = b?.time ? new Date(b.time).getTime() : 0;
+                return bTime - aTime;
+              })
+              .slice(0, 50)
+              .map((r: any) => {
               const key = r.id ?? `${r.time}|${r.sensor_id||''}|${r.what}`;
               return (
                 <tr key={key} className="transition-colors hover:bg-black/10">

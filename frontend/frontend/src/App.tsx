@@ -45,7 +45,16 @@ function App() {
         // eslint-disable-next-line no-console
         console.log('[manual-refresh] fetched observations count=', rows?.length || 0, rows);
       }
-      if (!abortRef.current) setObservations(rows ?? []);
+      if (!abortRef.current) {
+        const sortedRows = Array.isArray(rows)
+          ? [...rows].sort((a, b) => {
+              const aTime = a?.time ? new Date(a.time).getTime() : 0;
+              const bTime = b?.time ? new Date(b.time).getTime() : 0;
+              return bTime - aTime;
+            })
+          : [];
+        setObservations(sortedRows);
+      }
       const meta = _internal.getLastObservationMeta?.();
       if (!abortRef.current) setListMeta(meta);
       setLastRefresh(new Date().toLocaleTimeString());
