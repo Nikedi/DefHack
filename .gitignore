@@ -225,4 +225,4 @@ DefHack/sensors/audio/predictions.json
 *.md
 
 .vscode/
-node_modules/
+node_modules/minio-data/
