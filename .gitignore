@@ -225,3 +225,4 @@ DefHack/sensors/audio/predictions.json
 *.md
 
 .vscode/
+node_modules/
