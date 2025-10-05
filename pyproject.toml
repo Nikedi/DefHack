@@ -10,6 +10,8 @@ dependencies = [
     "pillow>=10.0",
     "yolov5>=7.0.14",
     "open-clip-torch>=3.2.0",
+    "matplotlib>=3.10.6",
+    "tqdm>=4.67.1",
 ]
 
 [dependency-groups]

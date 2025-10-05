@@ -100,4 +100,87 @@ These attributes can also be specified in the existing `extra` dictionary for
 backward compatibility. After editing the settings module, subsequent pipeline
 runs will transparently pick up the new defaults.
 
+### Acoustic drone detection pipeline
+
+The acoustic sensor module analyses either recorded WAV files or synthetic
+rotor simulations to detect blade-pass frequency (BPF) signatures. Importing
+`DefHack.sensors.audio` automatically registers the `acoustic_drone_bpf`
+algorithm with the shared `SensorSchema` factory.
+
+- **Simulated capture** (generates an observation from physics-based rotor noise):
+
+```pwsh
+uv run python -m DefHack.sensors.audio --report
+```
+
+- **Analyse an existing recording**:
+
+```pwsh
+uv run python -m DefHack.sensors.audio path/to/recording.wav --place 35VLG8472571866 --report
+```
+
+Each run prints the derived `SensorObservationIn` payload and, when
+`--report` is used, writes a human-readable text summary to
+`DefHack/sensors/audio/data/processed/`. The pipeline is configurable via
+`DefHack/sensors/audio/config.yaml`; override keys (sampling rate, FFT window,
+harmonic count, etc.) or pass runtime flags such as `--rpm` and `--blades`
+to tune the physics model for different rotorcraft.
+
+Just like the image pipeline, the CLI forwards results as
+`SensorObservationIn` records. By default they are written to
+`DefHack/sensors/audio/predictions.json`; pass `--readings-json` to choose a
+different destination or `--no-summary` to suppress console output when
+running in batch mode. Forwarded readings carry the unit `"Alpha Company"`
+and their `what` field is automatically prefixed with `"TACTICAL:"` for
+downstream routing consistency.
+
+#### Evaluating the UAV Propeller Anomaly dataset
+
+Download the [UAV Propeller Anomaly Audio Dataset](https://github.com/tiiuae/UAV-Propeller-Anomaly-Audio-Dataset)
+and extract it locally. Then run the evaluator to batch-process the WAV files:
+
+```pwsh
+uv run python -m DefHack.sensors.audio.evaluate_dataset C:/path/to/UAV-Propeller-Anomaly-Audio-Dataset --output reports/propeller_eval.csv
+```
+
+The command prints aggregate detection statistics per class and writes a CSV
+with per-file fundamentals, harmonic counts, SNR, and textual descriptions. Use
+`--format json` or `--max-files` to switch formats or sample subsets, and add
+`--reports` to keep individual text summaries alongside the dataset. Inputs are
+shuffled in a label-balanced order so capped runs still include every category;
+set `--seed` for deterministic shuffling. A progress bar is displayed by
+default; pass `--no-progress` when running in non-TTY environments.
+
+To quickly review the results visually, run the helper script (requires
+`matplotlib`):
+
+```pwsh
+uv run python tests/visualize_propeller_eval.py --show
+```
+
+This loads `reports/propeller_eval.csv`, generates a summary PNG at
+`reports/propeller_eval_summary.png`, and plots detection rate and confidence
+per class alongside a scatter of detected blade-pass frequencies.
+
+#### Sweeping detector parameters with ESC-50 and MLSP
+
+Use the parameter sweep utility to benchmark multiple acoustic tuning presets
+against a positive (MLSP) and negative (ESC-50) dataset in one pass:
+
+```pwsh
+uv run python -m DefHack.sensors.audio.parameter_sweep --max-positive 500 --max-negative 500 --quiet
+```
+
+By default the script searches for `MLSP_2022_Real_Data/real_data` and
+`ESC-50/audio` relative to the repository, iterating across a grid of
+`prominence_ratio`, `min_bpf_hz`, `max_bpf_hz`, `num_harmonics`, and
+`noise_floor_db` values. Results are written to `reports/parameter_sweep.csv`
+and summarised in the console.
+
+Add `--prominence-ratio`, `--min-bpf`, `--max-bpf`, `--harmonics`,
+`--noise-floor`, or repeated `--override KEY=VALUE` flags to expand the grid or
+force constant overrides. The evaluator reuses the balanced shuffling logic
+from `evaluate_dataset`, so capped runs remain representative and reproducible
+with `--seed`.
+
 

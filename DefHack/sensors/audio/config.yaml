@@ -1,0 +1,11 @@
+sampling_rate: 44100
+fft_size: 4096
+min_bpf_hz: 40
+max_bpf_hz: 2500
+num_harmonics: 6
+prominence_ratio: 6.0
+noise_floor_db: -42.0
+window: hann
+default_rpm: 4800
+default_blades: 4
+simulation_noise_level: 0.02

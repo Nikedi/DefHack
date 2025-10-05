@@ -26,7 +26,7 @@ from .sensors.images.yolov8_person_pipeline import Yolov8PersonCaptionSchema
 from .sensors.SensorSchema import SensorObservationIn
 
 
-DEFAULT_API_URL = "http://localhost:8080/ingest/sensor"
+DEFAULT_API_URL = "http://172.20.10.5:8080/ingest/sensor"
 DEFAULT_API_KEY = "583C55345736D7218355BCB51AA47"
 DEFAULT_SAVE_FOLDER = Path(__file__).parent / "sensors" / "images" / "current_image"
 DEFAULT_BACKLOG_PATH = Path(__file__).parent / "sensor_backlog.json"

@@ -237,10 +237,12 @@ name = "defhack"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
+    { name = "matplotlib" },
     { name = "numpy" },
     { name = "open-clip-torch" },
     { name = "pillow" },
     { name = "pydantic" },
+    { name = "tqdm" },
     { name = "yolov5" },
 ]
 
@@ -251,10 +253,12 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "matplotlib", specifier = ">=3.10.6" },
     { name = "numpy", specifier = ">=1.26" },
     { name = "open-clip-torch", specifier = ">=3.2.0" },
     { name = "pillow", specifier = ">=10.0" },
     { name = "pydantic", specifier = ">=2.11.9" },
+    { name = "tqdm", specifier = ">=4.67.1" },
     { name = "yolov5", specifier = ">=7.0.14" },
 ]
 
