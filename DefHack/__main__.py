@@ -16,7 +16,7 @@ import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Iterable, List, Optional, Sequence
+from typing import Any, Iterable, List, Optional, Sequence
 
 import cv2
 from urllib import error, request
@@ -30,6 +30,7 @@ DEFAULT_API_URL = "http://172.20.10.5:8080/ingest/sensor"
 DEFAULT_API_KEY = "583C55345736D7218355BCB51AA47"
 DEFAULT_SAVE_FOLDER = Path(__file__).parent / "sensors" / "images" / "current_image"
 DEFAULT_BACKLOG_PATH = Path(__file__).parent / "sensor_backlog.json"
+DEFAULT_UNIT_LABEL = "Alpha Company"
 
 
 @dataclass
@@ -55,6 +56,7 @@ class AppConfig:
 	caption_corpus: Optional[Path]
 	image_history: int
 	http_timeout: float
+	debug_payloads: bool
 
 
 def parse_args(argv: Sequence[str]) -> AppConfig:
@@ -62,7 +64,7 @@ def parse_args(argv: Sequence[str]) -> AppConfig:
 	parser.add_argument("--interval", type=float, default=10.0, help="Seconds between captures (default: 10)")
 	parser.add_argument(
 		"--mgrs",
-		default="UNKNOWN",
+		default="35VKH12345678",
 		help="MGRS location coded into sensor readings (default: UNKNOWN)",
 	)
 	parser.add_argument(
@@ -73,7 +75,10 @@ def parse_args(argv: Sequence[str]) -> AppConfig:
 	parser.add_argument(
 		"--unit",
 		default=None,
-		help="Unit label for the sensor readings (default: use pipeline-provided value)",
+		help=(
+			"Unit label for the sensor readings (default: use pipeline-provided value; "
+			f"falls back to '{DEFAULT_UNIT_LABEL}' when unspecified)"
+		),
 	)
 	parser.add_argument(
 		"--observer-signature",
@@ -96,13 +101,14 @@ def parse_args(argv: Sequence[str]) -> AppConfig:
 	parser.add_argument("--caption-corpus", type=Path, default=None, help="Optional phrase corpus for CLIP retrieval")
 	parser.add_argument("--image-history", type=int, default=5, help="How many captured images to retain on disk (default: 5)")
 	parser.add_argument("--http-timeout", type=float, default=5.0, help="Seconds before HTTP POST attempts time out (default: 5)")
+	parser.add_argument("--debug-payloads", action="store_true", help="Print payload JSON before posting to the API")
 	args = parser.parse_args(argv)
 
 	return AppConfig(
 		interval=max(1.0, args.interval),
 		mgrs=args.mgrs,
 		sensor_id=args.sensor_id,
-		unit=args.unit or None,
+		unit=args.unit.strip() if args.unit else None,
 		observer_signature=args.observer_signature,
 		api_url=args.api_url,
 		api_key=args.api_key or None,
@@ -120,6 +126,7 @@ def parse_args(argv: Sequence[str]) -> AppConfig:
 		caption_corpus=args.caption_corpus.resolve() if args.caption_corpus else None,
 		image_history=max(1, args.image_history),
 		http_timeout=max(1.0, args.http_timeout),
+		debug_payloads=bool(args.debug_payloads),
 	)
 
 
@@ -130,7 +137,7 @@ def _format_timestamp(value: object) -> str:
 		try:
 			dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
 		except ValueError:
-			return value
+			dt = datetime.now(timezone.utc)
 	else:
 		dt = datetime.now(timezone.utc)
 
@@ -139,22 +146,21 @@ def _format_timestamp(value: object) -> str:
 	else:
 		dt = dt.astimezone(timezone.utc)
 
-	return dt.isoformat(sep=" ", timespec="microseconds")
+	return dt.isoformat(timespec="seconds")
 
 
 def _format_mgrs(value: Optional[str]) -> str:
 	if not value:
-		return "UNKNOWN"
+		return "35VKH12345678"
 	cleaned = value.replace(" ", "").upper()
-	return cleaned or "UNKNOWN"
+	return cleaned or "35VKH12345678"
 
 
 def _normalise_what(value: Optional[str]) -> str:
 	if not value:
 		return ""
-	prefix = "TACTICAL:"
-	if value.startswith(prefix):
-		return value[len(prefix):]
+	if value.startswith("TACTICAL:"):
+		return value[len("TACTICAL:") :]
 	return value
 
 
@@ -187,6 +193,51 @@ def _save_backlog(path: Path, backlog: Sequence[dict[str, object]]) -> None:
 		print(f"Warning: failed to persist backlog {path}: {exc}")
 
 
+def _canonicalise_payload(raw: dict[str, Any], *, unit_override: Optional[str] = None) -> dict[str, object]:
+	timestamp = _format_timestamp(raw.get("time"))
+	mgrs_value = raw.get("mgrs")
+	unit_value = unit_override if unit_override is not None else raw.get("unit")
+	if isinstance(unit_value, str):
+		unit_value = unit_value.strip()
+	if not unit_value:
+		unit_value = DEFAULT_UNIT_LABEL
+	sensor_id_value = raw.get("sensor_id")
+	observer_signature = raw.get("observer_signature")
+	confidence_raw = raw.get("confidence", 0)
+	try:
+		confidence_value = int(confidence_raw)
+	except (TypeError, ValueError):
+		confidence_value = 0
+	confidence_value = max(0, min(confidence_value, 100))
+	what_value = _normalise_what(str(raw.get("what") or ""))
+	if not what_value:
+		what_value = "UNKNOWN"
+	structured: dict[str, object] = {
+		"time": timestamp,
+		"mgrs": _format_mgrs(
+			mgrs_value
+			if isinstance(mgrs_value, str)
+			else (str(mgrs_value) if mgrs_value is not None else None)
+		),
+		"what": what_value,
+		"confidence": confidence_value,
+		"sensor_id": str(sensor_id_value) if sensor_id_value else "UNSENT",
+		"observer_signature": str(observer_signature) if observer_signature else "UNKNOWN",
+	}
+	if unit_value:
+		structured["unit"] = str(unit_value)
+	amount = raw.get("amount")
+	if amount is not None:
+		try:
+			structured["amount"] = float(amount)
+		except (TypeError, ValueError):
+			pass
+	original_message = raw.get("original_message")
+	if original_message not in (None, ""):
+		structured["original_message"] = original_message
+	return structured
+
+
 def _post_payload(payload: dict[str, object], *, url: str, api_key: Optional[str], timeout: float) -> bool:
 	encoded = json.dumps(payload).encode("utf-8")
 	req = request.Request(url, data=encoded, method="POST")
@@ -202,7 +253,17 @@ def _post_payload(payload: dict[str, object], *, url: str, api_key: Optional[str
 				return True
 			print(f"Server responded with HTTP {status}, will retry later.")
 	except error.HTTPError as http_exc:
-		print(f"HTTP error posting sensor reading: {http_exc.status} {http_exc.reason}")
+		details = ""
+		try:
+			body = http_exc.read()
+			if body:
+				details = body.decode("utf-8", errors="replace").strip()
+		except Exception:
+			pass
+		if details:
+			print(f"HTTP error posting sensor reading: {http_exc.status} {http_exc.reason} -> {details}")
+		else:
+			print(f"HTTP error posting sensor reading: {http_exc.status} {http_exc.reason}")
 	except error.URLError as url_exc:
 		print(f"Network error posting sensor reading: {url_exc}")
 	except Exception as exc:
@@ -221,21 +282,7 @@ def _prepare_payloads(
 			payload = reading.model_dump(mode="python")
 		except AttributeError:
 			payload = reading.dict()  # type: ignore[attr-defined]
-		timestamp = _format_timestamp(payload.get("time"))
-		amount = payload.get("amount")
-		payloads.append(
-			{
-				"time": timestamp,
-				"mgrs": _format_mgrs(payload.get("mgrs")),
-				"what": _normalise_what(payload.get("what")),
-				"amount": float(amount) if amount is not None else 0.0,
-				"confidence": int(payload.get("confidence", 0)),
-				"sensor_id": payload.get("sensor_id"),
-				"unit": unit_override if unit_override is not None else payload.get("unit"),
-				"observer_signature": payload.get("observer_signature"),
-				"original_message": payload.get("original_message"),
-			}
-		)
+		payloads.append(_canonicalise_payload(payload, unit_override=unit_override))
 	return payloads
 
 
@@ -246,18 +293,22 @@ def _deliver_readings(
 	url: str,
 	api_key: Optional[str],
 	timeout: float,
+	debug_payloads: bool = False,
+	poster=_post_payload,
 ) -> None:
 	if not payloads and not backlog_path.exists():
 		return
 
-	backlog = _load_backlog(backlog_path)
-	backlog.extend(payloads)
+	backlog_entries = [_canonicalise_payload(item) for item in _load_backlog(backlog_path)]
+	backlog_entries.extend(_canonicalise_payload(item) for item in payloads)
 
 	remaining: List[dict[str, object]] = []
 	delivered = 0
 
-	for payload in backlog:
-		if _post_payload(payload, url=url, api_key=api_key, timeout=timeout):
+	for payload in backlog_entries:
+		if debug_payloads:
+			print("DEBUG payload ->", json.dumps(payload, indent=2, sort_keys=True, ensure_ascii=False))
+		if poster(payload, url=url, api_key=api_key, timeout=timeout):
 			delivered += 1
 			print(f"Delivered reading: {payload.get('what')} @ {payload.get('time')}")
 		else:
@@ -387,6 +438,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 					url=config.api_url,
 					api_key=config.api_key,
 					timeout=config.http_timeout,
+					debug_payloads=config.debug_payloads,
 				)
 			_prune_captures(config.save_folder, keep=config.image_history)
 
