@@ -1,0 +1,140 @@
+# Project Plan: Soldier Recognition Pipeline in Forest Environments
+
+## Objective
+
+Design and implement an end-to-end pipeline to **detect and recognize soldiers in forest images** (of arbitrary H×W size), and output a structured **intel schema** containing all relevant details for each detection.
+
+---
+
+## 1. Problem Definition
+
+- **Input:** RGB image (H×W×3) of a forest scene.
+- **Output:** Intel schema with:
+  - Bounding box/location of each detected soldier.
+  - Segmentation mask (precise outline).
+  - Classification (soldier/uniform type, equipment, etc.).
+  - Confidence scores.
+  - Timestamp, image meta-data.
+
+---
+
+## 2. Pipeline Overview
+
+**Stages:**
+
+1. **Preprocessing**
+   - Image normalization, resizing, and augmentation (if required).
+2. **Object Detection**
+   - Use YOLOv5 (or similar) to identify bounding boxes for soldiers.
+3. **Instance Segmentation**
+   - Use Segment Anything Model (SAM) to obtain masks for each detected soldier.
+4. **Attribute Extraction**
+   - Classify uniform type, equipment, pose, etc. using a secondary classifier.
+5. **Intel Schema Construction**
+   - Aggregate all details into a structured output (e.g., JSON, CSV).
+
+---
+
+## 3. Detailed Steps
+
+### 3.1 Data Preparation
+
+- **Data Collection:** Gather forest images with annotated soldiers.
+- **Labeling:** Use bounding boxes and (if possible) segmentation masks.
+- **Metadata:** Ensure each image has timestamp, location info, and sensor details.
+
+### 3.2 Model Selection & Integration
+
+- **Detection:**  
+  - *Model:* YOLOv5, pretrained on relevant datasets, finetuned on soldier-in-forest images.
+  - *Output:* `[x1, y1, x2, y2, confidence]` per detection.
+- **Segmentation:**  
+  - *Model:* Segment Anything Model (SAM).
+  - *Input:* Image + bounding box prompt.
+  - *Output:* Mask for each soldier.
+- **Classification:**  
+  - *Model:* Lightweight CNN/classifier.
+  - *Input:* Cropped image/mask.
+  - *Output:* Uniform type, equipment, pose.
+
+### 3.3 Pipeline Implementation
+
+1. **Input image → Preprocessing.**
+2. **Run YOLOv5 → Get bounding boxes.**
+3. **For each box:**
+   - Pass to SAM → Get mask.
+   - Crop/mask soldier region → Classify attributes.
+4. **Intel schema construction:**
+   - For each detection, store:
+     - `bounding_box: [x1, y1, x2, y2]`
+     - `mask: <binary mask>`
+     - `classification: {uniform_type, equipment, pose}`
+     - `confidence: float`
+     - `image_meta: {timestamp, ...}`
+
+### 3.4 Output Format (Intel Schema Example)
+
+```json
+{
+  "image_id": "forest_001.jpg",
+  "timestamp": "2025-10-03T17:26:06Z",
+  "detections": [
+    {
+      "bounding_box": [120, 56, 210, 156],
+      "mask": "<base64-encoded-binary-mask>",
+      "classification": {
+        "uniform_type": "woodland_camouflage",
+        "equipment": ["rifle", "helmet"],
+        "pose": "standing"
+      },
+      "confidence": 0.93
+    },
+    ...
+  ]
+}
+```
+
+---
+
+## 4. Testing & Validation
+
+- **Metrics:** Precision, recall, IOU for detection/segmentation; classification accuracy.
+- **Test Cases:** Diverse forest backgrounds, occlusion, low light, multiple soldiers.
+
+---
+
+## 5. Milestones & Timeline
+
+- **Week 1:** Data collection & annotation.
+- **Week 2:** Model selection, environment setup.
+- **Week 3:** Detection & segmentation integration.
+- **Week 4:** Attribute extraction, schema design.
+- **Week 5:** End-to-end testing, validation.
+- **Week 6:** Documentation & deployment prep.
+
+---
+
+## 6. Risks & Mitigations
+
+- **Camouflage/occlusion:** Use data augmentation, synthetic training data.
+- **Edge cases:** Human-in-the-loop review for ambiguous detections.
+- **Low bandwidth:** Optimize model size; allow batch/offline processing.
+
+---
+
+## 7. Documentation & Handover
+
+- Document pipeline, model configs, and API usage.
+- Provide sample images and schema outputs.
+- Write user and developer guides.
+
+---
+
+
+## ✅ Success Criteria
+
+- >90% detection rate on validation set.
+- Accurate segmentation masks.
+- Intel schema populated for every image with all required fields.
+
+---
