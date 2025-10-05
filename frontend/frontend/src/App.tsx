@@ -2,26 +2,26 @@
 import { useEffect, useRef, useState } from "react";
 import Topbar from "./components/Topbar";
 import Sidebar from "./components/Sidebar";
-import SummaryCards from "./components/SummaryCards";
-import { TimeSeriesChart } from "./components/Charts";
 import DataTable from "./components/DataTable";
 import RightPanel from "./components/RightPanel";
 import Reports from "./components/Reports";
 import { fetchAnalytics, fetchObservations, _internal, type SensorObservation } from "./api";
 import ErrorBoundary from "./components/ErrorBoundary";
 import MapFeed from "./components/MapFeed";
+import MapIntelPanel from "./components/MapIntelPanel";
 import SensorTree from "./components/SensorTree";
 import "./styles/military.css";
+import type { MapIntelStats } from "./utils/mapIntel";
 
 function App() {
   const [page, setPage] = useState<"dashboard" | "reports">("dashboard");
   const [analytics, setAnalytics] = useState<any>(null);
   const [observations, setObservations] = useState<SensorObservation[]>([]);
+  const [mapStats, setMapStats] = useState<MapIntelStats | null>(null);
   const [filters, setFilters] = useState<any>({});
   const [loading, setLoading] = useState(false);
   const [lastRefresh, setLastRefresh] = useState<string | null>(null);
   const [endpointPath, setEndpointPath] = useState<string | null>(null);
-  const [listMeta, setListMeta] = useState<any>(null);
   const backoffRef = useRef(2000);
   const refreshTimerRef = useRef<any>(null);
   const abortRef = useRef<boolean>(false);
@@ -55,8 +55,6 @@ function App() {
           : [];
         setObservations(sortedRows);
       }
-      const meta = _internal.getLastObservationMeta?.();
-      if (!abortRef.current) setListMeta(meta);
       setLastRefresh(new Date().toLocaleTimeString());
       backoffRef.current = 5000; // reset to 5s after success
     } catch (err) {
@@ -132,7 +130,7 @@ function App() {
                 <div className="grid grid-cols-3 gap-4 mb-4">
                   <div className="col-span-2 mil-panel scanline">
                     <div className="mb-2 text-sm mil-muted">Map / Feed</div>
-                    <MapFeed observations={observations} />
+                    <MapFeed observations={observations} onStatsChange={setMapStats} />
                   </div>
                   <div className="mil-panel mil-sensor-tree-panel">
                     <div className="text-sm mil-muted mb-2">Sensor Topology</div>
@@ -153,13 +151,11 @@ function App() {
                   )}
                 </div>
 
-                {/* 2x2 Summary Metric Grid */}
-                <SummaryCards analytics={analytics} observations={observations} listMeta={listMeta} />
+                <div className="mb-4">
+                  <MapIntelPanel stats={mapStats} />
+                </div>
 
                 {/* Timeseries / other charts */}
-                <div className="mb-4 mil-panel">
-                  <TimeSeriesChart data={analytics?.timeseries ?? []} />
-                </div>
               </>
             )}
 

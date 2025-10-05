@@ -1,8 +1,18 @@
 // src/components/Reports.tsx
 import { useState, useEffect } from 'react';
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import jsPDF from 'jspdf';
 
-interface Observation { time: string; what: string; confidence?: number; mgrs?: string; sensor_id?: string; unit?: string | null; observer_signature?: string; }
+interface Observation {
+  time: string;
+  what: string;
+  confidence?: number;
+  mgrs?: string | null;
+  sensor_id?: string | null;
+  unit?: string | null;
+  observer_signature?: string;
+}
 
 interface Props { observations: Observation[]; }
 
@@ -131,13 +141,28 @@ export default function Reports({ observations }: Props) {
         </div>
       </div>
       {error && <div className="mb-2 text-xs text-red-400">{error}</div>}
-      <textarea
-        className="w-full h-96 p-3 text-sm border bg-black/20 border-black/25 rounded resize"
-        rows={28}
-        value={report}
-        placeholder="OPORD output will appear here"
-        readOnly
-      />
+      <div className="mil-report-layout">
+        <label className="mil-report-section">
+          <span className="mil-report-section__title">Raw OPORD Text</span>
+          <textarea
+            className="mil-report-section__textarea"
+            rows={28}
+            value={report}
+            placeholder="OPORD output will appear here"
+            readOnly
+          />
+        </label>
+        <section className="mil-report-preview" aria-live="polite">
+          <div className="mil-report-section__title">Rendered Preview</div>
+          {report ? (
+            <ReactMarkdown remarkPlugins={[remarkGfm]} className="mil-report-preview__content">
+              {report}
+            </ReactMarkdown>
+          ) : (
+            <div className="mil-report-preview__empty">Generate an OPORD to view the formatted output.</div>
+          )}
+        </section>
+      </div>
       {!openAIKey && <div className="mt-2 text-xs mil-muted">Set VITE_OPENAI_KEY for live generation. Currently using fallback template.</div>}
     </div>
   );

@@ -7,7 +7,7 @@ type TreeEntry = {
 };
 
 const DEFAULT_UNIT = "Unassigned Unit";
-const HUMAN_BRANCH = "Sensors";
+const HUMAN_BRANCH = "Human Observer";
 
 function normaliseLabel(value: string | null | undefined, fallback: string): string {
   const label = value?.trim();
@@ -22,16 +22,15 @@ export default function SensorTree({ observations }: { observations: SensorObser
       const unitName = normaliseLabel(obs.unit, DEFAULT_UNIT);
       const store = map.get(unitName) ?? { sensors: new Map(), humans: new Map() };
 
-      const sensorIdRaw = obs.sensor_id?.trim();
-      const hasSensorKeyword = sensorIdRaw ? sensorIdRaw.toLowerCase().includes("sensor") : false;
+      const observerSignatureRaw = obs.observer_signature?.trim() || null;
+      const fallbackSource = observerSignatureRaw || obs.sensor_id || "Unknown Source";
+      const normalizedLabel = normaliseLabel(observerSignatureRaw, fallbackSource);
+      const isSensor = observerSignatureRaw?.toLowerCase().includes("sensor") ?? false;
 
-      if (hasSensorKeyword && sensorIdRaw) {
-        const machineLabel = sensorIdRaw;
-        store.sensors.set(machineLabel, (store.sensors.get(machineLabel) ?? 0) + 1);
+      if (isSensor) {
+        store.sensors.set(normalizedLabel, (store.sensors.get(normalizedLabel) ?? 0) + 1);
       } else {
-        const fallbackSource = sensorIdRaw || obs.observer_signature || "Unknown Source";
-        const humanLabel = normaliseLabel(obs.observer_signature, fallbackSource);
-        store.humans.set(humanLabel, (store.humans.get(humanLabel) ?? 0) + 1);
+        store.humans.set(normalizedLabel, (store.humans.get(normalizedLabel) ?? 0) + 1);
       }
 
       map.set(unitName, store);

@@ -4,9 +4,19 @@ import type { SensorObservation } from "../api";
 import * as mgrs from "mgrs";
 import { DivIcon, latLngBounds } from "leaflet";
 import type { LatLngTuple } from "leaflet";
+import {
+  deriveConfidenceTier,
+  deriveObservationType,
+  formatConfidence,
+  formatObservationTypeLabel,
+  type ConfidenceTier,
+  type MapIntelStats,
+  type ObservationType
+} from "../utils/mapIntel";
 
 interface MapFeedProps {
   observations: SensorObservation[];
+  onStatsChange?: (stats: MapIntelStats) => void;
 }
 
 interface FeaturePoint {
@@ -17,59 +27,16 @@ interface FeaturePoint {
   mgrs?: string | null;
   tier: ConfidenceTier;
   classification: ObservationType;
+  tone: MarkerTone;
 }
 
 const DEFAULT_CENTER: LatLngTuple = [0, 0];
 
-type ConfidenceTier = "low" | "medium" | "high" | "unknown";
-type ObservationType = "armor" | "vehicle" | "infantry" | "air" | "artillery" | "unknown";
-
 const MARKER_SIZE: [number, number] = [34, 34];
 const MARKER_ANCHOR: [number, number] = [17, 17];
 const TOOLTIP_ANCHOR: [number, number] = [18, 0];
-const TYPE_ORDER: ObservationType[] = ["armor", "vehicle", "infantry", "artillery", "air", "unknown"];
 
-function deriveConfidenceTier(confidence: number | null): ConfidenceTier {
-  if (confidence == null || Number.isNaN(confidence)) return "unknown";
-  if (confidence >= 80) return "high";
-  if (confidence >= 50) return "medium";
-  return "low";
-}
-
-function formatConfidence(confidence: number | null): string {
-  if (confidence == null || Number.isNaN(confidence)) return "—";
-  const value = confidence > 1 ? confidence : confidence * 100;
-  return `${Math.round(value)}%`;
-}
-
-const OBSERVATION_KEYWORDS: Array<{ type: ObservationType; patterns: RegExp[] }> = [
-  { type: "armor", patterns: [/\btank(s)?\b/i, /\bmbt\b/i, /armou?red?/i, /afv/i, /apc/i, /abrams/i, /t[-\s]?\d+/i] },
-  { type: "vehicle", patterns: [/\bconvoy\b/i, /\bvehicle(s)?\b/i, /truck(s)?/i, /logistic(s)?/i, /jeep/i, /transport/i] },
-  { type: "infantry", patterns: [/infantry/i, /soldier(s)?/i, /troop(s)?/i, /platoon/i, /squad/i, /foot (unit|patrol)/i, /sniper/i, /combatant(s)?/i] },
-  { type: "air", patterns: [/helicopter/i, /helo/i, /uav/i, /drone/i, /aircraft/i, /jet/i, /fighter/i] },
-  { type: "artillery", patterns: [/artillery/i, /howitzer/i, /mortar/i, /rocket battery/i, /mlrs/i] }
-];
-
-function deriveObservationType(label: string | null | undefined): ObservationType {
-  if (!label) return "unknown";
-  const text = label.toLowerCase();
-  for (const entry of OBSERVATION_KEYWORDS) {
-    if (entry.patterns.some((pattern) => pattern.test(text))) {
-      return entry.type;
-    }
-  }
-  return "unknown";
-}
-
-function formatObservationTypeLabel(type: ObservationType): string {
-  if (type === "unknown") return "Other";
-  return type.replace(/(^.|\s.)/g, (segment) => segment.toUpperCase());
-}
-
-function formatConfidenceTierLabel(tier: ConfidenceTier): string {
-  if (tier === "unknown") return "Unknown";
-  return tier.charAt(0).toUpperCase() + tier.slice(1);
-}
+type MarkerTone = "support" | "hostile";
 
 const NATO_GLYPHS: Record<ObservationType, string> = {
   armor: '<svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg"><rect x="6" y="10" width="20" height="12" rx="2.5" ry="2.5" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="22" r="2" fill="currentColor"/><circle cx="20" cy="22" r="2" fill="currentColor"/></svg>',
@@ -80,10 +47,15 @@ const NATO_GLYPHS: Record<ObservationType, string> = {
   unknown: '<svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg"><path d="M16 8a6 6 0 0 1 6 6c0 2.5-1.5 3.9-3 5-1 0.7-1.5 1.3-1.5 2.4v1.6" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/><circle cx="16" cy="24.5" r="1.6" fill="currentColor"/></svg>'
 };
 
-function createNatoIconHtml(classification: ObservationType, tier: ConfidenceTier): string {
+function deriveTone(label: string | null | undefined): MarkerTone {
+  if (!label) return "hostile";
+  return /logistic|support/i.test(label) ? "support" : "hostile";
+}
+
+function createNatoIconHtml(classification: ObservationType, tier: ConfidenceTier, tone: MarkerTone): string {
   const glyph = NATO_GLYPHS[classification] ?? NATO_GLYPHS.unknown;
   return `
-    <div class="mil-nato-marker mil-nato-marker--${classification} mil-nato-marker--tier-${tier}">
+    <div class="mil-nato-marker mil-nato-marker--${classification} mil-nato-marker--tier-${tier} mil-nato-marker--tone-${tone}">
       <div class="mil-nato-marker__frame">
         <span class="mil-nato-marker__glyph mil-nato-marker__glyph--${classification}">${glyph}</span>
       </div>
@@ -139,17 +111,17 @@ function mgrsToLatLng(value: string): LatLngTuple | null {
   }
 }
 
-const MapFeed = ({ observations }: MapFeedProps) => {
+const MapFeed = ({ observations, onStatsChange }: MapFeedProps) => {
   const [hasUserInteraction, setHasUserInteraction] = useState(false);
   const [expandedMarkers, setExpandedMarkers] = useState<Record<string, boolean>>({});
   const iconCache = useRef<Record<string, DivIcon>>({});
 
-  const getIconForMarker = useCallback((tier: ConfidenceTier, classification: ObservationType) => {
-    const cacheKey = `${classification}::${tier}`;
+  const getIconForMarker = useCallback((tier: ConfidenceTier, classification: ObservationType, tone: MarkerTone) => {
+    const cacheKey = `${classification}::${tier}::${tone}`;
     if (!iconCache.current[cacheKey]) {
       iconCache.current[cacheKey] = new DivIcon({
         className: "mil-nato-icon",
-        html: createNatoIconHtml(classification, tier),
+        html: createNatoIconHtml(classification, tier, tone),
         iconSize: MARKER_SIZE,
         iconAnchor: MARKER_ANCHOR,
         tooltipAnchor: TOOLTIP_ANCHOR
@@ -168,6 +140,7 @@ const MapFeed = ({ observations }: MapFeedProps) => {
         const confidenceValue = typeof obs.confidence === "number" ? obs.confidence : null;
         const tier = deriveConfidenceTier(confidenceValue);
         const classification = deriveObservationType(obs.what);
+        const tone = deriveTone(obs.what);
         return {
           key: `${obs.id ?? obs.time ?? idx}-${normalized}`,
           position: coords,
@@ -175,7 +148,8 @@ const MapFeed = ({ observations }: MapFeedProps) => {
           confidence: confidenceValue,
           mgrs: normalized,
           tier,
-          classification
+          classification,
+          tone
         };
       })
       .filter((entry): entry is FeaturePoint => Boolean(entry));
@@ -196,7 +170,7 @@ const MapFeed = ({ observations }: MapFeedProps) => {
     });
   }, [features]);
 
-  const stats = useMemo(() => {
+  const stats = useMemo<MapIntelStats>(() => {
     if (!features.length) {
       return {
         total: 0,
@@ -249,12 +223,9 @@ const MapFeed = ({ observations }: MapFeedProps) => {
     return { total: features.length, avgConfidence, tierCounts, typeCounts, topSignals };
   }, [features]);
 
-  const tierEntries = useMemo(() => {
-    const ordered: ConfidenceTier[] = ["high", "medium", "low", "unknown"];
-    return ordered.filter((tier) => stats.tierCounts[tier] > 0);
-  }, [stats]);
-
-  const typeEntries = useMemo(() => TYPE_ORDER.filter((type) => stats.typeCounts[type] > 0), [stats]);
+  useEffect(() => {
+    onStatsChange?.(stats);
+  }, [stats, onStatsChange]);
 
   useEffect(() => {
     const previousCount = previousCountRef.current;
@@ -269,14 +240,40 @@ const MapFeed = ({ observations }: MapFeedProps) => {
   }, []);
 
   const toggleMarker = useCallback((key: string) => {
-    setExpandedMarkers((prev) => ({
-      ...prev,
-      [key]: !(prev[key] ?? false)
-    }));
+    setExpandedMarkers((prev) => {
+      const next = { ...prev, [key]: !(prev[key] ?? false) };
+      return next;
+    });
   }, []);
+
+  const toggleAllMarkers = useCallback(() => {
+    setExpandedMarkers((prev) => {
+      const shouldExpand = !features.every((feature) => prev[feature.key]);
+      const next: Record<string, boolean> = {};
+      for (const feature of features) {
+        next[feature.key] = shouldExpand;
+      }
+      return next;
+    });
+  }, [features]);
+
+  const areAllExpanded = useMemo(() => {
+    if (!features.length) return true;
+    return features.every((feature) => expandedMarkers[feature.key]);
+  }, [expandedMarkers, features]);
 
   return (
     <div className="mil-map-large">
+      <div className="mil-map-controls">
+        <button
+          type="button"
+          className="btn-mil mil-map-controls__toggle"
+          onClick={toggleAllMarkers}
+          disabled={!features.length}
+        >
+          {areAllExpanded ? "Collapse All" : "Expand All"}
+        </button>
+      </div>
       <MapContainer
         center={center}
         minZoom={2}
@@ -299,7 +296,7 @@ const MapFeed = ({ observations }: MapFeedProps) => {
             <Marker
               key={feature.key}
               position={feature.position}
-              icon={getIconForMarker(feature.tier, feature.classification)}
+              icon={getIconForMarker(feature.tier, feature.classification, feature.tone)}
               eventHandlers={{
                 click: () => toggleMarker(feature.key)
               }}
@@ -334,80 +331,13 @@ const MapFeed = ({ observations }: MapFeedProps) => {
                     </div>
                   </div>
                 </Tooltip>
-              ) : (
-                <Tooltip
-                  permanent
-                  direction="right"
-                  offset={[10, 0]}
-                  className="mil-map-label mil-map-label--collapsed"
-                  interactive
-                >
-                  <button
-                    type="button"
-                    className="mil-map-tooltip-collapsed"
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      event.preventDefault();
-                      toggleMarker(feature.key);
-                    }}
-                  >
-                    Expand
-                  </button>
-                </Tooltip>
-              )}
+              ) : null}
             </Marker>
           );
         })}
       </MapContainer>
       {!features.length && (
         <div className="mil-map-empty">No observations with MGRS coordinates yet.</div>
-      )}
-      {features.length > 0 && (
-        <div className="mil-map-intel" role="status" aria-live="polite">
-          <div className="mil-map-intel__grid">
-            <div className="mil-map-intel__stat">
-              <span className="mil-map-intel__label">Observations</span>
-              <span className="mil-map-intel__value">{stats.total}</span>
-            </div>
-            <div className="mil-map-intel__stat">
-              <span className="mil-map-intel__label">Avg Conf.</span>
-              <span className="mil-map-intel__value">{stats.avgConfidence != null ? `${Math.round(stats.avgConfidence)}%` : "—"}</span>
-            </div>
-            {tierEntries.length > 0 && (
-              <div className="mil-map-intel__legend">
-                {tierEntries.map((tier) => (
-                  <span key={tier} className={`mil-map-legend-chip mil-map-legend-chip--${tier}`}>
-                    {formatConfidenceTierLabel(tier)} · {stats.tierCounts[tier]}
-                  </span>
-                ))}
-              </div>
-            )}
-            {typeEntries.length > 0 && (
-              <div className="mil-map-intel__types">
-                {typeEntries.map((type) => (
-                  <span key={type} className={`mil-map-type-chip mil-map-type-chip--${type}`}>
-                    <span className="mil-map-type-chip__icon" aria-hidden="true" />
-                    <span className="mil-map-type-chip__label">{formatObservationTypeLabel(type)}</span>
-                    <span className="mil-map-type-chip__count">{stats.typeCounts[type]}</span>
-                  </span>
-                ))}
-              </div>
-            )}
-            {stats.topSignals.length > 0 && (
-              <div className="mil-map-intel__signals">
-                <span className="mil-map-intel__label">Top Signals</span>
-                <div className="mil-map-intel__signals-wrap">
-                  {stats.topSignals.map((signal) => (
-                    <span key={signal.label} className="mil-map-intel__signal">
-                      <span className="mil-map-intel__signal-label">{signal.label}</span>
-                      <span className="mil-map-intel__signal-count">{signal.count}</span>
-                    </span>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
       )}
       <div className="mil-map-overlay" aria-hidden="true" />
     </div>
