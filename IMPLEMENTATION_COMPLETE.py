@@ -110,8 +110,8 @@ WORKFLOW 4: Higher Echelon Intelligence ✅
 
 STEP 1: Environment Setup
 Your .env file should contain:
-- TELEGRAM_BOT_TOKEN=7873073230:AAHO9ySIWpAD6OSEBsIpLO--hAnX6sLn6Pw
-- OPENAI_API_KEY=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
+- TELEGRAM_BOT_TOKEN=***REMOVED***
+- OPENAI_API_KEY=***REMOVED***
 
 STEP 2: Start the Complete System
 python DefHack/clarity_opsbot/main_bot.py
