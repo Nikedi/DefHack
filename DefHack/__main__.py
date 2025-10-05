@@ -82,7 +82,7 @@ def parse_args(argv: Sequence[str]) -> AppConfig:
 	)
 	parser.add_argument(
 		"--observer-signature",
-		default="YOLOv8 Inference",
+		default="SENSOR:YOLOv8 Inference",
 		help="Observer signature included with each reading (default: YOLOv8 Inference)",
 	)
 	parser.add_argument("--api-url", default=DEFAULT_API_URL, help="Target ingestion endpoint URL")

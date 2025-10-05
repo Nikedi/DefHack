@@ -210,3 +210,16 @@ DefHack/sensors/images/predictions_v8/*
 
 yolov8n.pt
 MLSP_2022_Real_Data/
+ESC-50/
+reports/
+UAV-Propeller-Anomaly-Audio-Dataset/
+DefHack/sensors/audio/data/processed/acoustic_report_20251004T235821Z.txt
+*.csv
+*.mp4
+*.zip
+DefHack/sensors/audio/data/processed/
+*.png
+*.jpg
+DefHack/sensors/images/predictions
+DefHack/sensors/audio/predictions.json
+*.md

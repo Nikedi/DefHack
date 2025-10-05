@@ -138,8 +138,14 @@ Just like the image pipeline, the CLI forwards results as
 `DefHack/sensors/audio/predictions.json`; pass `--readings-json` to choose a
 different destination or `--no-summary` to suppress console output when
 running in batch mode. Forwarded readings carry the unit `"Alpha Company"`
-and their `what` field is automatically prefixed with `"TACTICAL:"` for
-downstream routing consistency.
+and their `what` field is automatically prefixed with `"TACTICAL:"`, leading
+with an FPV/NO-FPV prediction and the detector confidence (for example:
+`TACTICAL: FPV DETECTED (confidence 92%) - …`). Use `--api-url`/`--api-key` to stream the
+payload to the same ingest endpoint as the image pipeline (default:
+`http://172.20.10.5:8080/ingest/sensor`). HTTP retries and the backlog file
+(`--backlog-file`, defaults to `DefHack/sensors/audio/backlog.json`) reuse the
+image pipeline’s delivery helpers; add `--debug-payloads` to inspect the JSON
+or `--no-send` when you only need local artifacts.
 
 #### Evaluating the UAV Propeller Anomaly dataset
 
