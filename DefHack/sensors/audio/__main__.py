@@ -4,7 +4,7 @@ import argparse
 import json
 from pathlib import Path
 
-from ...__main__ import (
+from ..images.ingest import (
     DEFAULT_API_KEY,
     DEFAULT_API_URL,
     DEFAULT_UNIT_LABEL,

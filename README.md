@@ -44,7 +44,7 @@ For more details, see the [uv documentation](https://github.com/astral-sh/uv).
 
 ### Debugging ingestion payloads
 
-When running the live ingestion loop (`uv run python -m DefHack`), pass
+When running the live ingestion loop (`uv run python -m DefHack.sensors.images.ingest`), pass
 `--debug-payloads` to print each JSON payload before it is sent to the API.
 Backlog retries respect the flag as well, making it easy to confirm the exact
 request body when diagnosing 4xx responses.
