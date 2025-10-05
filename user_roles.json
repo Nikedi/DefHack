@@ -8,7 +8,7 @@
     "rank": null,
     "callsign": null,
     "registered_at": "2025-10-04T08:11:01.198936+00:00",
-    "last_active": "2025-10-05T01:00:08.538678+00:00",
+    "last_active": "2025-10-05T01:47:29.029851+00:00",
     "phone_number": null
   },
   "887241145": {
@@ -16,11 +16,11 @@
     "username": "nikokataja",
     "full_name": "nikokataja",
     "role": "platoon_leader",
-    "unit": "Alpha Company",
+    "unit": "Bravo Company",
     "rank": null,
     "callsign": null,
     "registered_at": "2025-10-04T08:15:45.023010+00:00",
-    "last_active": "2025-10-04T23:53:52.341328+00:00",
+    "last_active": "2025-10-05T01:49:17.717774+00:00",
     "phone_number": null
   },
   "12345": {
@@ -136,35 +136,35 @@
     "username": "Markus_Maattanen",
     "full_name": "Markus_Maattanen",
     "role": "soldier",
-    "unit": "Charlie Company",
+    "unit": "Alpha Company",
     "rank": null,
     "callsign": null,
     "registered_at": "2025-10-04T15:35:02.427922+00:00",
-    "last_active": "2025-10-05T00:59:48.631475+00:00",
+    "last_active": "2025-10-05T01:16:16.398861+00:00",
     "phone_number": null
   },
   "6345419304": {
     "user_id": 6345419304,
     "username": "k_kiirikki",
     "full_name": "k_kiirikki",
-    "role": "platoon_2ic",
-    "unit": "Alpha Company",
+    "role": "soldier",
+    "unit": "Bravo Company",
     "rank": null,
     "callsign": null,
     "registered_at": "2025-10-04T18:12:07.250945+00:00",
-    "last_active": "2025-10-04T20:10:48.366048+00:00",
+    "last_active": "2025-10-05T01:27:50.534474+00:00",
     "phone_number": null
   },
   "6563195850": {
     "user_id": 6563195850,
     "username": "veksa10",
     "full_name": "veksa10",
-    "role": "platoon_leader",
+    "role": "platoon_2ic",
     "unit": "Alpha Company",
     "rank": null,
     "callsign": null,
     "registered_at": "2025-10-04T23:01:30.563407+00:00",
-    "last_active": "2025-10-04T23:57:01.767866+00:00",
+    "last_active": "2025-10-05T01:25:53.943976+00:00",
     "phone_number": null
   }
 }
