@@ -141,7 +141,7 @@ class DefHackIntegratedSystem:
                         
                         # Store observation (notifications will be sent via API polling)
                         if self.leader_notifications:
-                            await self.leader_notifications.process_new_observation(observation, chat_id, send_notifications=False)
+                            await self.leader_notifications.process_new_observation(observation, chat_id, send_notifications=False, store_in_db=True)
                             self.logger.info(f"✅ Logistics observation stored, notifications will be sent via API polling")
                         else:
                             self.logger.warning(f"⚠️ Leader notification system not available, logistics observation not processed")
@@ -154,7 +154,7 @@ class DefHackIntegratedSystem:
                         
                         # Store observation (notifications will be sent via API polling)
                         if self.leader_notifications:
-                            await self.leader_notifications.process_new_observation(observation, chat_id, send_notifications=False)
+                            await self.leader_notifications.process_new_observation(observation, chat_id, send_notifications=False, store_in_db=True)
                             self.logger.info(f"✅ Support observation stored, notifications will be sent via API polling")
                         else:
                             self.logger.warning(f"⚠️ Leader notification system not available, support observation not processed")
@@ -165,7 +165,7 @@ class DefHackIntegratedSystem:
                         
                         # Store observation (notifications will be sent via API polling)
                         if self.leader_notifications:
-                            await self.leader_notifications.process_new_observation(observation, chat_id, send_notifications=False)
+                            await self.leader_notifications.process_new_observation(observation, chat_id, send_notifications=False, store_in_db=True)
                             self.logger.info(f"✅ Tactical observation stored, notifications will be sent via API polling")
                         else:
                             self.logger.warning(f"⚠️ Leader notification system not available, tactical observation not processed")
@@ -297,10 +297,12 @@ class DefHackIntegratedSystem:
                 threat_level=self._determine_threat_level(observation)
             )
             
-            # Send notifications to appropriate leaders
+            # Send notifications to appropriate leaders (don't store again - already in database)
             await self.leader_notifications.process_new_observation(
                 observation=api_observation,
-                chat_id=0  # API observations don't have chat_id
+                chat_id=0,  # API observations don't have chat_id
+                send_notifications=True,  # Send notifications
+                store_in_db=False  # Don't store again - already stored by immediate processing
             )
             
             # Mark observation as sent by updating sensor_id to 'SENT'
