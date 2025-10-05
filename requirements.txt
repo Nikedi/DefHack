@@ -1,0 +1,16 @@
+fastapi
+uvicorn[standard]
+sqlalchemy[asyncio]
+asyncpg
+psycopg2-binary
+alembic
+pydantic
+pydantic-settings
+python-multipart
+httpx
+boto3
+python-dotenv
+openai
+pypdf
+utm
+python-telegram-bot

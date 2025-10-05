@@ -223,3 +223,5 @@ DefHack/sensors/audio/data/processed/
 DefHack/sensors/images/predictions
 DefHack/sensors/audio/predictions.json
 *.md
+
+.vscode/
