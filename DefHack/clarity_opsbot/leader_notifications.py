@@ -57,13 +57,18 @@ class LeaderNotificationSystem:
             self.logger.error(f"Failed to import required modules: {e}")
     
     async def process_new_observation(self, observation: 'ProcessedObservation', 
-                                    chat_id: int) -> None:
+                                    chat_id: int, send_notifications: bool = True) -> None:
         """
         Process a new observation and send notifications to appropriate leaders
         """
         try:
             # Store observation in DefHack database first and capture raw data for debugging
             observation_id, raw_db_data = await self._store_observation_in_database(observation)
+            
+            # Only send notifications if explicitly requested
+            if not send_notifications:
+                self.logger.info(f"Observation stored but notifications skipped (will be sent via API polling)")
+                return
             
             # Determine notification priority based on threat level
             priority = self._determine_priority(observation)
