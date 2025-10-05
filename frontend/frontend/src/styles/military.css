@@ -13,7 +13,7 @@
   --mil-surface-alt: #1f2223; /* panels */
   --mil-surface-elev: #242728; /* elevated */
   --mil-desktop-sidebar: 320px;
-  --mil-map-height-desktop: 560px;
+  --mil-map-height-desktop: 680px;
   --mil-summary-height: 96px;
 }
 
@@ -649,13 +649,106 @@ body::before, body::after { background:none; }
   color: rgba(130, 182, 255, 0.85) !important;
 }
 
-/* Alerts column aligned vertically */
-.mil-alerts {
-  display:flex;
-  flex-direction:column;
-  gap:0.75rem;
+.mil-sensor-tree-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: var(--mil-map-height-desktop);
+  max-height: var(--mil-map-height-desktop);
   background: var(--mil-surface-alt);
-  border:1px solid var(--mil-border);
+  border: 1px solid var(--mil-border);
+  padding: 14px;
+  overflow: hidden;
+}
+
+.mil-sensor-tree {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding-right: 6px;
+}
+
+.mil-sensor-tree__empty {
+  font-size: 0.75rem;
+  color: var(--mil-muted);
+}
+
+.mil-sensor-tree__units,
+.mil-sensor-tree__children,
+.mil-sensor-tree__leaves {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.mil-sensor-tree__unit + .mil-sensor-tree__unit {
+  margin-top: 10px;
+}
+
+.mil-sensor-tree__branch {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: rgba(16, 24, 33, 0.65);
+  border: 1px solid rgba(78, 124, 196, 0.28);
+}
+
+.mil-sensor-tree__category {
+  margin-top: 6px;
+  margin-left: 8px;
+}
+
+.mil-sensor-tree__leaves {
+  margin-top: 4px;
+  margin-left: 16px;
+  border-left: 2px solid rgba(78, 124, 196, 0.22);
+}
+
+.mil-sensor-tree__leaf {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px;
+  font-size: 0.7rem;
+  color: rgba(209, 220, 234, 0.85);
+}
+
+.mil-sensor-tree__leaf + .mil-sensor-tree__leaf {
+  margin-top: 4px;
+}
+
+.mil-sensor-tree__label {
+  flex: 1 1 auto;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mil-sensor-tree__badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: rgba(73, 148, 255, 0.16);
+  color: rgba(162, 202, 255, 0.9);
+  font-size: 0.65rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.mil-sensor-tree__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(73, 148, 255, 0.65);
+  box-shadow: 0 0 6px rgba(73, 148, 255, 0.45);
+}
+
+.mil-sensor-tree__dot--human {
+  background: rgba(142, 216, 126, 0.8);
+  box-shadow: 0 0 6px rgba(142, 216, 126, 0.45);
 }
 
 /* Slightly larger topbar font for desktop */

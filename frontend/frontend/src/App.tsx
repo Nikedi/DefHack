@@ -10,6 +10,7 @@ import Reports from "./components/Reports";
 import { fetchAnalytics, fetchObservations, _internal, type SensorObservation } from "./api";
 import ErrorBoundary from "./components/ErrorBoundary";
 import MapFeed from "./components/MapFeed";
+import SensorTree from "./components/SensorTree";
 import "./styles/military.css";
 
 function App() {
@@ -118,10 +119,19 @@ function App() {
 
             {page === "dashboard" && (
               <>
-                {/* 2x2 Summary Metric Grid */}
-                <SummaryCards analytics={analytics} observations={observations} listMeta={listMeta} />
+                {/* Map feed and sensor topology */}
+                <div className="grid grid-cols-3 gap-4 mb-4">
+                  <div className="col-span-2 mil-panel scanline">
+                    <div className="mb-2 text-sm mil-muted">Map / Feed</div>
+                    <MapFeed observations={observations} />
+                  </div>
+                  <div className="mil-panel mil-sensor-tree-panel">
+                    <div className="text-sm mil-muted mb-2">Sensor Topology</div>
+                    <SensorTree observations={observations} />
+                  </div>
+                </div>
 
-                {/* Observations Table moved ABOVE map */}
+                {/* Observations Table */}
                 <div className="mb-4 mil-panel mil-table-wrap">
                   <DataTable data={observations} onRefresh={() => load(true)} />
                   {observations.length === 0 && (
@@ -134,25 +144,8 @@ function App() {
                   )}
                 </div>
 
-                {/* Map + Alerts side by side */}
-                <div className="grid grid-cols-3 gap-4 mb-4">
-                  <div className="col-span-2 mil-panel scanline">
-                    <div className="mb-2 text-sm mil-muted">Map / Feed</div>
-                    <MapFeed observations={observations} />
-                  </div>
-                  <div className="mil-panel mil-alerts">
-                    <div className="text-sm mil-muted">Alerts</div>
-                    <ul className="mt-3 space-y-2">
-                      <li className="flex items-start gap-3">
-                        <span className="status-dot status-warn" />
-                        <div>
-                          <div className="font-bold">Sensor latency</div>
-                          <div className="text-xs mil-muted">Sensor S3 not responding</div>
-                        </div>
-                      </li>
-                    </ul>
-                  </div>
-                </div>
+                {/* 2x2 Summary Metric Grid */}
+                <SummaryCards analytics={analytics} observations={observations} listMeta={listMeta} />
 
                 {/* Timeseries / other charts */}
                 <div className="mb-4 mil-panel">
