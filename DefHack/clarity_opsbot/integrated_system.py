@@ -805,7 +805,7 @@ class DefHackIntegratedSystem:
                 self.logger.error(f"❌ Failed to send error reply: {reply_error}")
     
     async def _process_transcribed_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE, transcript: str):
-        """Process transcribed voice message text through normal message handling"""
+        """Process transcribed voice message text through normal message handling with location waiting"""
         try:
             # Get the message components we need
             message = update.effective_message
@@ -814,15 +814,15 @@ class DefHackIntegratedSystem:
             
             # Process the transcript through the message processor
             cluster_key = f"{chat.id}_{user.id}"
+            current_time = datetime.now(timezone.utc)
             
-            # Add to message cluster or process immediately
+            # Add to message cluster using same logic as normal text messages
             if cluster_key in self.message_clusters:
                 # Add to existing cluster
                 self.message_clusters[cluster_key]["messages"].append(transcript)
                 self.logger.info(f"📦 Added voice transcript to existing cluster {cluster_key}")
             else:
                 # Create new cluster for transcribed message
-                current_time = datetime.now(timezone.utc)
                 self.message_clusters[cluster_key] = {
                     "messages": [transcript],
                     "timestamp": current_time,
@@ -834,9 +834,18 @@ class DefHackIntegratedSystem:
                     "location": None
                 }
                 self.logger.info(f"🆕 New voice transcript cluster created for {cluster_key}")
-                
-                # Process the transcribed message immediately
-                await self._process_clustered_messages(cluster_key)
+            
+            # Cancel existing timeout for this cluster (same as normal messages)
+            if cluster_key in self.cluster_timeouts:
+                self.cluster_timeouts[cluster_key].cancel()
+            
+            # Set new 10-second timeout for location waiting (same as normal messages)
+            timeout_task = asyncio.create_task(
+                self._wait_and_process_cluster(cluster_key, 10.0)
+            )
+            self.cluster_timeouts[cluster_key] = timeout_task
+            
+            self.logger.info(f"⏰ Set 10s timeout for voice transcript cluster {cluster_key} (waiting for potential location)")
                 
         except Exception as e:
             self.logger.error(f"❌ Error processing transcribed message: {e}")
